@@ -1,0 +1,134 @@
+import { NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
+import { prisma } from '@/lib/prisma';
+import { getCurrentTenantId } from '@/lib/tenant';
+import { z } from 'zod';
+
+const vatRateUpdateSchema = z.object({
+  name: z.string().min(1).max(100).optional(),
+  rate: z.number().min(0).max(100).optional(),
+  country: z.string().length(2).optional(),
+  is_default: z.boolean().optional(),
+  is_active: z.boolean().optional(),
+});
+
+// PATCH /api/settings/vat-rates/[id]
+export async function PATCH(
+  req: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const session = await getServerSession(authOptions);
+
+    if (!session?.user) {
+      return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
+    }
+
+    const tenantId = await getCurrentTenantId();
+
+    if (!tenantId) {
+      return NextResponse.json({ error: 'Tenant non trouvé' }, { status: 404 });
+    }
+
+    const { id } = await params;
+    const body = await req.json();
+    const data = vatRateUpdateSchema.parse(body);
+
+    // Verify ownership
+    const existing = await prisma.vatRate.findFirst({
+      where: {
+        id: id,
+        tenant_id: tenantId,
+      },
+    });
+
+    if (!existing) {
+      return NextResponse.json({ error: 'Taux de TVA non trouvé' }, { status: 404 });
+    }
+
+    // If setting as default, unset other defaults
+    if (data.is_default) {
+      await prisma.vatRate.updateMany({
+        where: {
+          tenant_id: tenantId,
+          is_default: true,
+        },
+        data: {
+          is_default: false,
+        },
+      });
+    }
+
+    const vatRate = await prisma.vatRate.update({
+      where: { id: id },
+      data,
+    });
+
+    return NextResponse.json(vatRate);
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json({ error: error.errors }, { status: 400 });
+    }
+
+    console.error('Error updating VAT rate:', error);
+    return NextResponse.json(
+      { error: 'Erreur lors de la mise à jour du taux de TVA' },
+      { status: 500 }
+    );
+  }
+}
+
+// DELETE /api/settings/vat-rates/[id]
+export async function DELETE(
+  req: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+
+  try {
+    const session = await getServerSession(authOptions);
+
+    if (!session?.user) {
+      return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
+    }
+
+    const tenantId = await getCurrentTenantId();
+
+    if (!tenantId) {
+      return NextResponse.json({ error: 'Tenant non trouvé' }, { status: 404 });
+    }
+
+    // Verify ownership
+    const existing = await prisma.vatRate.findFirst({
+      where: {
+        id: id,
+        tenant_id: tenantId,
+      },
+    });
+
+    if (!existing) {
+      return NextResponse.json({ error: 'Taux de TVA non trouvé' }, { status: 404 });
+    }
+
+    // Prevent deletion of default rate
+    if (existing.is_default) {
+      return NextResponse.json(
+        { error: 'Impossible de supprimer le taux de TVA par défaut' },
+        { status: 400 }
+      );
+    }
+
+    await prisma.vatRate.delete({
+      where: { id: id },
+    });
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting VAT rate:', error);
+    return NextResponse.json(
+      { error: 'Erreur lors de la suppression du taux de TVA' },
+      { status: 500 }
+    );
+  }
+}

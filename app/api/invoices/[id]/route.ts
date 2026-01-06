@@ -1,0 +1,183 @@
+import { NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
+import { getCurrentTenantId } from '@/lib/tenant';
+import { z } from 'zod';
+
+/**
+ * GET /api/invoices/:id
+ * Get a single invoice
+ */
+export async function GET(
+  req: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+
+  try {
+    const tenantId = await getCurrentTenantId();
+
+    const invoice = await prisma.invoice.findFirst({
+      where: {
+        id: id,
+        tenant_id: tenantId,
+        deleted_at: null,
+      },
+      include: {
+        contact: {
+          select: {
+            id: true,
+            first_name: true,
+            last_name: true,
+            email: true,
+            phone: true,
+            company: true,
+            address: true,
+          },
+        },
+        quote: true,
+      },
+    });
+
+    if (!invoice) {
+      return NextResponse.json(
+        { error: 'Facture non trouvée' },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json(invoice);
+  } catch (error) {
+    console.error('Get invoice error:', error);
+    return NextResponse.json(
+      { error: 'Erreur lors de la récupération de la facture' },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * PATCH /api/invoices/:id
+ * Update an invoice
+ */
+export async function PATCH(
+  req: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+
+  try {
+    const tenantId = await getCurrentTenantId();
+    const body = await req.json();
+
+    // Check invoice exists
+    const existing = await prisma.invoice.findFirst({
+      where: {
+        id: id,
+        tenant_id: tenantId,
+        deleted_at: null,
+      },
+    });
+
+    if (!existing) {
+      return NextResponse.json(
+        { error: 'Facture non trouvée' },
+        { status: 404 }
+      );
+    }
+
+    // Update invoice
+    const updateData: any = {};
+
+    if (body.status) updateData.status = body.status;
+    if (body.notes !== undefined) updateData.notes = body.notes;
+    if (body.due_date) updateData.due_date = new Date(body.due_date);
+    if (body.payment_method) updateData.payment_method = body.payment_method;
+    if (body.siret) updateData.siret = body.siret;
+    if (body.tva_number) updateData.tva_number = body.tva_number;
+
+    // Mark as paid if status is PAID
+    if (body.status === 'PAID' && !existing.paid_at) {
+      updateData.paid_at = new Date();
+    }
+
+    // Recalculate totals if items changed
+    if (body.items) {
+      updateData.items = body.items;
+
+      const subtotal = body.items.reduce((sum: number, item: any) => {
+        return sum + (item.quantity * item.unit_price);
+      }, 0);
+
+      const vatRate = body.items[0]?.vat_rate || 20;
+      const vatAmount = (subtotal * vatRate) / 100;
+      const total = subtotal + vatAmount;
+
+      updateData.subtotal = Number(subtotal.toFixed(2));
+      updateData.vat_rate = vatRate;
+      updateData.vat_amount = Number(vatAmount.toFixed(2));
+      updateData.total = Number(total.toFixed(2));
+    }
+
+    const invoice = await prisma.invoice.update({
+      where: { id: id },
+      data: updateData,
+      include: {
+        contact: true,
+        quote: true,
+      },
+    });
+
+    return NextResponse.json(invoice);
+  } catch (error) {
+    console.error('Update invoice error:', error);
+    return NextResponse.json(
+      { error: 'Erreur lors de la mise à jour de la facture' },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * DELETE /api/invoices/:id
+ * Soft delete an invoice
+ */
+export async function DELETE(
+  req: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+
+  try {
+    const tenantId = await getCurrentTenantId();
+
+    // Check invoice exists
+    const existing = await prisma.invoice.findFirst({
+      where: {
+        id: id,
+        tenant_id: tenantId,
+        deleted_at: null,
+      },
+    });
+
+    if (!existing) {
+      return NextResponse.json(
+        { error: 'Facture non trouvée' },
+        { status: 404 }
+      );
+    }
+
+    // Soft delete
+    await prisma.invoice.update({
+      where: { id: id },
+      data: { deleted_at: new Date() },
+    });
+
+    return NextResponse.json({ message: 'Facture supprimée' });
+  } catch (error) {
+    console.error('Delete invoice error:', error);
+    return NextResponse.json(
+      { error: 'Erreur lors de la suppression de la facture' },
+      { status: 500 }
+    );
+  }
+}

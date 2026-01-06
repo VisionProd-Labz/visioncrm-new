@@ -1,0 +1,87 @@
+import { NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
+import { getCurrentTenantId } from '@/lib/tenant';
+import { z } from 'zod';
+
+const documentSchema = z.object({
+  name: z.string().min(1).max(255),
+  category: z.string().min(1).max(100),
+  file_url: z.string().url(),
+  file_type: z.string().min(1).max(50),
+  file_size: z.number().int().positive(),
+  metadata: z.any().optional(),
+});
+
+/**
+ * GET /api/company/documents
+ * List company documents
+ */
+export async function GET(req: Request) {
+  try {
+    const tenantId = await getCurrentTenantId();
+    const { searchParams } = new URL(req.url);
+
+    const category = searchParams.get('category');
+
+    // Build where clause
+    const where: any = {
+      tenant_id: tenantId,
+      deleted_at: null,
+    };
+
+    if (category && category !== 'all') {
+      where.category = category;
+    }
+
+    // Get documents
+    const documents = await prisma.document.findMany({
+      where,
+      orderBy: { created_at: 'desc' },
+    });
+
+    return NextResponse.json({ documents });
+  } catch (error) {
+    console.error('Get documents error:', error);
+    return NextResponse.json(
+      { error: 'Erreur lors de la récupération des documents' },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * POST /api/company/documents
+ * Upload a new document
+ */
+export async function POST(req: Request) {
+  try {
+    const tenantId = await getCurrentTenantId();
+    const body = await req.json();
+
+    // Validate input
+    const data = documentSchema.parse(body);
+
+    // Create document
+    const document = await prisma.document.create({
+      data: {
+        ...data,
+        tenant_id: tenantId,
+      },
+    });
+
+    return NextResponse.json(document, { status: 201 });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: 'Données invalides', details: error.errors },
+        { status: 400 }
+      );
+    }
+
+    console.error('Create document error:', error);
+    return NextResponse.json(
+      { error: 'Erreur lors de la création du document' },
+      { status: 500 }
+    );
+  }
+}

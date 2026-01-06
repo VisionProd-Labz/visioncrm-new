@@ -1,0 +1,131 @@
+import { NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
+import { getCurrentTenantId } from '@/lib/tenant';
+import { z } from 'zod';
+
+const emailSchema = z.object({
+  account_id: z.string().uuid(),
+  from_email: z.string().email(),
+  from_name: z.string().min(1).max(255),
+  to_emails: z.array(z.string().email()),
+  subject: z.string().min(1).max(500),
+  body: z.string().min(1),
+  html_body: z.string().optional(),
+  folder: z.enum(['INBOX', 'SENT', 'DRAFTS', 'STARRED', 'ARCHIVE', 'TRASH']).optional(),
+  attachments: z.any().optional(),
+});
+
+/**
+ * GET /api/email/messages
+ * List emails
+ */
+export async function GET(req: Request) {
+  try {
+    const tenantId = await getCurrentTenantId();
+    const { searchParams } = new URL(req.url);
+
+    const folder = searchParams.get('folder') || 'INBOX';
+    const accountId = searchParams.get('account_id');
+    const search = searchParams.get('search') || '';
+
+    // Build where clause - need to join through email account
+    const where: any = {
+      folder: folder as any,
+    };
+
+    if (accountId) {
+      where.account_id = accountId;
+    }
+
+    if (search) {
+      where.OR = [
+        { subject: { contains: search, mode: 'insensitive' } },
+        { from_email: { contains: search, mode: 'insensitive' } },
+        { from_name: { contains: search, mode: 'insensitive' } },
+      ];
+    }
+
+    // Get emails with account info
+    const emails = await prisma.email.findMany({
+      where,
+      orderBy: { created_at: 'desc' },
+      take: 100,
+    });
+
+    // Filter by tenant (we need to check if the account belongs to the tenant)
+    const tenantEmails = await Promise.all(
+      emails.map(async (email) => {
+        const account = await prisma.emailAccount.findFirst({
+          where: {
+            id: email.account_id,
+            tenant_id: tenantId,
+          },
+        });
+        return account ? email : null;
+      })
+    );
+
+    const filteredEmails = tenantEmails.filter(Boolean);
+
+    return NextResponse.json({ emails: filteredEmails });
+  } catch (error) {
+    console.error('Get emails error:', error);
+    return NextResponse.json(
+      { error: 'Erreur lors de la récupération des emails' },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * POST /api/email/messages
+ * Send/create a new email
+ */
+export async function POST(req: Request) {
+  try {
+    const tenantId = await getCurrentTenantId();
+    const body = await req.json();
+
+    // Validate input
+    const data = emailSchema.parse(body);
+
+    // Verify account belongs to tenant
+    const account = await prisma.emailAccount.findFirst({
+      where: {
+        id: data.account_id,
+        tenant_id: tenantId,
+      },
+    });
+
+    if (!account) {
+      return NextResponse.json(
+        { error: 'Compte email non trouvé' },
+        { status: 404 }
+      );
+    }
+
+    // Create email
+    const email = await prisma.email.create({
+      data: {
+        ...data,
+        folder: data.folder || 'SENT',
+        from_account_id: data.account_id,
+      },
+    });
+
+    return NextResponse.json(email, { status: 201 });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: 'Données invalides', details: error.errors },
+        { status: 400 }
+      );
+    }
+
+    console.error('Create email error:', error);
+    return NextResponse.json(
+      { error: 'Erreur lors de la création de l\'email' },
+      { status: 500 }
+    );
+  }
+}

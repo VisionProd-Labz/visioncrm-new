@@ -1,0 +1,152 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ===== KATALYST EXACT THEME ===== */
+@layer base {
+  :root {
+    /* Light Mode - Katalyst Clean Style */
+    --background: 0 0% 98%; /* #FAFAFA */
+    --foreground: 222 47% 11%; /* #0F172A */
+
+    --card: 0 0% 100%; /* #FFFFFF */
+    --card-foreground: 222 47% 11%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+
+    --primary: 217 91% 60%; /* Blue #3b82f6 */
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 220 14% 96%; /* #F3F4F6 */
+    --secondary-foreground: 222 47% 11%;
+
+    --muted: 220 14% 96%; /* #F3F4F6 */
+    --muted-foreground: 215 16% 47%; /* #64748B */
+
+    --accent: 220 14% 96%;
+    --accent-foreground: 222 47% 11%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 220 13% 91%; /* #E5E7EB */
+    --input: 220 13% 91%;
+    --ring: 217 91% 60%;
+
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    /* Dark Mode - Exact Katalyst Colors */
+    --background: 0 0% 3.9%; /* #0a0a0a */
+    --foreground: 0 0% 98%; /* #fafafa */
+
+    --card: 240 5.6% 10%; /* #18181b */
+    --card-foreground: 0 0% 98%;
+
+    --popover: 240 5.6% 10%;
+    --popover-foreground: 0 0% 98%;
+
+    --primary: 217 91% 60%; /* Blue #3b82f6 */
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 240 3.7% 15.9%; /* #27272a */
+    --secondary-foreground: 0 0% 98%;
+
+    --muted: 240 3.7% 15.9%; /* #27272a */
+    --muted-foreground: 240 5% 64.9%; /* #a1a1aa */
+
+    --accent: 240 3.7% 15.9%;
+    --accent-foreground: 0 0% 98%;
+
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 240 3.7% 15.9%; /* #27272a */
+    --input: 240 3.7% 15.9%;
+    --ring: 217 91% 60%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+}
+
+@layer utilities {
+  /* Clean minimal card */
+  .card-clean {
+    @apply bg-card border border-border rounded-lg;
+  }
+
+  .card-hover {
+    @apply card-clean hover:border-foreground/20 transition-colors duration-200;
+  }
+
+  /* Minimal shadows */
+  .shadow-subtle {
+    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  }
+
+  .shadow-card {
+    box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+  }
+
+  /* Clean buttons */
+  .btn {
+    @apply inline-flex items-center justify-center rounded-lg text-sm font-medium transition-colors;
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring;
+    @apply disabled:pointer-events-none disabled:opacity-50;
+  }
+
+  .btn-primary {
+    @apply bg-primary text-primary-foreground hover:bg-primary/90;
+  }
+
+  .btn-secondary {
+    @apply bg-secondary text-secondary-foreground hover:bg-secondary/80;
+  }
+
+  .btn-outline {
+    @apply border border-input bg-background hover:bg-accent hover:text-accent-foreground;
+  }
+
+  .btn-ghost {
+    @apply hover:bg-accent hover:text-accent-foreground;
+  }
+
+  /* Clean inputs */
+  .input-clean {
+    @apply flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm;
+    @apply file:border-0 file:bg-transparent file:text-sm file:font-medium;
+    @apply placeholder:text-muted-foreground;
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring;
+    @apply disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  /* Clean badges */
+  .badge {
+    @apply inline-flex items-center rounded-md px-2.5 py-0.5 text-xs font-semibold transition-colors;
+    @apply focus:outline-none focus:ring-2 focus:ring-ring;
+  }
+
+  .badge-default {
+    @apply border border-transparent bg-primary text-primary-foreground hover:bg-primary/80;
+  }
+
+  .badge-secondary {
+    @apply border border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/80;
+  }
+
+  .badge-outline {
+    @apply border border-input text-foreground;
+  }
+}

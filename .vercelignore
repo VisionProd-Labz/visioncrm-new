@@ -1,0 +1,38 @@
+# Dependencies
+node_modules
+.pnpm-store
+
+# Testing
+coverage
+.nyc_output
+playwright-report
+test-results
+
+# Development
+.env.local
+.env*.local
+*.log
+
+# Build outputs
+.next
+out
+dist
+build
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Prisma
+prisma/migrations/migration_lock.toml
+
+# Scripts
+scripts/test-*.ts
+scripts/create-demo-account.ts

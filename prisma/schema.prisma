@@ -1,0 +1,787 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["fullTextSearch"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Tenant {
+  id                     String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  subdomain              String                @unique @db.VarChar(63)
+  name                   String                @db.VarChar(255)
+  plan                   Plan                  @default(FREE)
+  stripe_customer_id     String?               @unique @db.VarChar(255)
+  stripe_subscription_id String?               @unique @db.VarChar(255)
+  settings               Json?
+  created_at             DateTime              @default(now()) @db.Timestamptz(3)
+  updated_at             DateTime              @updatedAt @db.Timestamptz(3)
+  deleted_at             DateTime?             @db.Timestamptz(3)
+  company_name           String?               @db.VarChar(255)
+  company_siret          String?               @db.VarChar(14)
+  company_tva            String?               @db.VarChar(50)
+  company_address        Json?
+  company_logo           String?               @db.VarChar(500)
+  company_info           Json?
+  currency_display       String?               @default("after") @db.VarChar(10)
+  date_format            String?               @default("DD-MM-YYYY") @db.VarChar(20)
+  number_format          Json?
+  phone_clickable        Boolean               @default(true)
+  activities             Activity[]
+  catalog_items          CatalogItem[]
+  contacts               Contact[]
+  conversations          Conversation[]
+  custom_payment_methods CustomPaymentMethod[]
+  documents              Document[]
+  email_accounts         EmailAccount[]
+  email_templates        EmailTemplate[]
+  events                 Event[]
+  invoices               Invoice[]
+  payment_terms          PaymentTerm[]
+  quotes                 Quote[]
+  task_categories        TaskCategory[]
+  tasks                  Task[]
+  team_invitations       TeamInvitation[]
+  users                  User[]
+  vat_rates              VatRate[]
+  vehicles               Vehicle[]
+
+  @@index([subdomain])
+  @@index([stripe_customer_id])
+  @@map("tenants")
+}
+
+model User {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId      String?   @map("tenant_id") @db.Uuid
+  email         String    @unique @db.VarChar(255)
+  password      String?   @db.VarChar(255)
+  emailVerified DateTime? @map("email_verified") @db.Timestamptz(3)
+  name          String    @db.VarChar(255)
+  image         String?   @map("avatar_url") @db.VarChar(500)
+  role          Role          @default(USER)
+  mfaEnabled    Boolean       @default(false) @map("mfa_enabled")
+  mfaSecret     String?       @map("mfa_secret") @db.VarChar(255)
+  createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt     DateTime?     @map("deleted_at") @db.Timestamptz(3)
+  accounts                 Account[]
+  activities               Activity[]
+  sessions                 Session[]
+  assignedTasks            Task[]                     @relation("TaskAssignee")
+  userConsents             UserConsent[]
+  passwordResetTokens      PasswordResetToken[]
+  emailVerificationTokens  EmailVerificationToken[]
+  tenant                   Tenant?                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([email])
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId            String  @map("user_id") @db.Uuid
+  type              String  @db.VarChar(50)
+  provider          String  @db.VarChar(50)
+  providerAccountId String  @map("provider_account_id") @db.VarChar(255)
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String? @db.VarChar(50)
+  scope             String?
+  id_token          String?
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId       String   @map("user_id") @db.Uuid
+  sessionToken String   @unique @map("session_token") @db.VarChar(255)
+  expires      DateTime @db.Timestamptz(3)
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String   @db.VarChar(255)
+  token      String   @unique @db.VarChar(255)
+  expires    DateTime @db.Timestamptz(3)
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+model PasswordResetToken {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  token     String   @unique @db.VarChar(255)
+  expires   DateTime @db.Timestamptz(3)
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+  @@map("password_reset_tokens")
+}
+
+model EmailVerificationToken {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  token     String   @unique @db.VarChar(255)
+  expires   DateTime @db.Timestamptz(3)
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+  @@map("email_verification_tokens")
+}
+
+model TeamInvitation {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenant_id   String    @db.Uuid
+  email       String    @db.VarChar(255)
+  role        Role      @default(USER)
+  token       String    @unique @db.VarChar(255)
+  invited_by  String    @db.Uuid
+  expires_at  DateTime  @db.Timestamptz(3)
+  accepted_at DateTime? @db.Timestamptz(3)
+  created_at  DateTime  @default(now()) @db.Timestamptz(3)
+  tenant      Tenant    @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@unique([tenant_id, email])
+  @@index([tenant_id])
+  @@index([token])
+  @@map("team_invitations")
+}
+
+model UserConsent {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id          String    @db.Uuid
+  marketing_emails Boolean   @default(false)
+  analytics        Boolean   @default(false)
+  data_sharing     Boolean   @default(false)
+  granted_at       DateTime  @default(now()) @db.Timestamptz(3)
+  revoked_at       DateTime? @db.Timestamptz(3)
+  ip_address       String?   @db.VarChar(45)
+  user             User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id])
+  @@map("user_consents")
+}
+
+model Contact {
+  id            String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenant_id     String     @db.Uuid
+  first_name    String     @db.VarChar(100)
+  last_name     String     @db.VarChar(100)
+  email         String?    @db.VarChar(255)
+  phone         String?    @db.VarChar(20)
+  company       String?    @db.VarChar(255)
+  address       Json?
+  tags          String[]   @db.VarChar(50)
+  is_vip        Boolean    @default(false)
+  custom_fields Json?
+  search_vector String?
+  created_at    DateTime   @default(now()) @db.Timestamptz(3)
+  updated_at    DateTime   @updatedAt @db.Timestamptz(3)
+  deleted_at    DateTime?  @db.Timestamptz(3)
+  activities    Activity[]
+  tenant        Tenant     @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  invoices      Invoice[]
+  quotes        Quote[]
+  tasks         Task[]
+  vehicles      Vehicle[]
+
+  @@unique([tenant_id, email])
+  @@index([tenant_id, created_at(sort: Desc)])
+  @@index([tenant_id, email])
+  @@index([tenant_id, phone])
+  @@index([tenant_id, is_vip])
+  @@map("contacts")
+}
+
+model Vehicle {
+  id               String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenant_id        String          @db.Uuid
+  owner_id         String          @db.Uuid
+  vin              String          @unique @db.VarChar(17)
+  license_plate    String          @db.VarChar(15)
+  make             String          @db.VarChar(50)
+  model            String          @db.VarChar(100)
+  year             Int
+  color            String?         @db.VarChar(50)
+  mileage          Int?
+  insurance_expiry DateTime?       @db.Date
+  warranty_expiry  DateTime?       @db.Date
+  created_at       DateTime        @default(now()) @db.Timestamptz(3)
+  updated_at       DateTime        @updatedAt @db.Timestamptz(3)
+  deleted_at       DateTime?       @db.Timestamptz(3)
+  service_records  ServiceRecord[]
+  owner            Contact         @relation(fields: [owner_id], references: [id], onDelete: Cascade)
+  tenant           Tenant          @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@unique([tenant_id, vin])
+  @@index([tenant_id, owner_id])
+  @@index([tenant_id, license_plate])
+  @@map("vehicles")
+}
+
+model ServiceRecord {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  vehicle_id  String   @db.Uuid
+  date        DateTime @db.Date
+  mileage     Int
+  description String
+  cost        Decimal? @db.Decimal(10, 2)
+  parts       Json?
+  labor_hours Decimal? @db.Decimal(5, 2)
+  created_at  DateTime @default(now()) @db.Timestamptz(3)
+  vehicle     Vehicle  @relation(fields: [vehicle_id], references: [id], onDelete: Cascade)
+
+  @@index([vehicle_id, date(sort: Desc)])
+  @@map("service_records")
+}
+
+model Quote {
+  id           String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenant_id    String      @db.Uuid
+  contact_id   String      @db.Uuid
+  quote_number String      @unique @db.VarChar(50)
+  issue_date   DateTime    @default(now()) @db.Date
+  valid_until  DateTime    @db.Date
+  items        Json
+  subtotal     Decimal     @db.Decimal(10, 2)
+  vat_rate     Decimal     @default(20.0) @db.Decimal(5, 2)
+  vat_amount   Decimal     @db.Decimal(10, 2)
+  total        Decimal     @db.Decimal(10, 2)
+  status       QuoteStatus @default(DRAFT)
+  notes        String?
+  created_at   DateTime    @default(now()) @db.Timestamptz(3)
+  updated_at   DateTime    @updatedAt @db.Timestamptz(3)
+  deleted_at   DateTime?   @db.Timestamptz(3)
+  invoice      Invoice?
+  contact      Contact     @relation(fields: [contact_id], references: [id])
+  tenant       Tenant      @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_id, status])
+  @@index([tenant_id, created_at(sort: Desc)])
+  @@index([tenant_id, contact_id])
+  @@map("quotes")
+}
+
+model Invoice {
+  id             String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenant_id      String         @db.Uuid
+  contact_id     String         @db.Uuid
+  quote_id       String?        @unique @db.Uuid
+  invoice_number String         @unique @db.VarChar(50)
+  issue_date     DateTime       @default(now()) @db.Date
+  due_date       DateTime       @db.Date
+  items          Json
+  subtotal       Decimal        @db.Decimal(10, 2)
+  vat_rate       Decimal        @default(20.0) @db.Decimal(5, 2)
+  vat_amount     Decimal        @db.Decimal(10, 2)
+  total          Decimal        @db.Decimal(10, 2)
+  status         InvoiceStatus  @default(DRAFT)
+  payment_method PaymentMethod?
+  paid_at        DateTime?      @db.Timestamptz(3)
+  siret          String?        @db.VarChar(14)
+  tva_number     String?        @db.VarChar(50)
+  notes          String?
+  created_at     DateTime       @default(now()) @db.Timestamptz(3)
+  updated_at     DateTime       @updatedAt @db.Timestamptz(3)
+  deleted_at     DateTime?      @db.Timestamptz(3)
+  contact        Contact        @relation(fields: [contact_id], references: [id])
+  quote          Quote?         @relation(fields: [quote_id], references: [id])
+  tenant         Tenant         @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_id, status])
+  @@index([tenant_id, due_date])
+  @@index([tenant_id, created_at(sort: Desc)])
+  @@index([tenant_id, contact_id])
+  @@map("invoices")
+}
+
+model Task {
+  id           String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenant_id    String     @db.Uuid
+  title        String     @db.VarChar(255)
+  description  String?
+  assignee_id  String?    @db.Uuid
+  contact_id   String?    @db.Uuid
+  due_date     DateTime?  @db.Timestamptz(3)
+  completed_at DateTime?  @db.Timestamptz(3)
+  status       TaskStatus @default(TODO)
+  priority     Priority   @default(MEDIUM)
+  created_at   DateTime   @default(now()) @db.Timestamptz(3)
+  updated_at   DateTime   @updatedAt @db.Timestamptz(3)
+  deleted_at   DateTime?  @db.Timestamptz(3)
+  assignee     User?      @relation("TaskAssignee", fields: [assignee_id], references: [id])
+  contact      Contact?   @relation(fields: [contact_id], references: [id], onDelete: Cascade)
+  tenant       Tenant     @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_id, status])
+  @@index([tenant_id, assignee_id])
+  @@index([tenant_id, due_date])
+  @@index([tenant_id, created_at(sort: Desc)])
+  @@map("tasks")
+}
+
+model Activity {
+  id          String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenant_id   String       @db.Uuid
+  user_id     String       @db.Uuid
+  contact_id  String?      @db.Uuid
+  type        ActivityType
+  description String
+  metadata    Json?
+  created_at  DateTime     @default(now()) @db.Timestamptz(3)
+  contact     Contact?     @relation(fields: [contact_id], references: [id], onDelete: Cascade)
+  tenant      Tenant       @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  user        User         @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_id, created_at(sort: Desc)])
+  @@index([tenant_id, contact_id, created_at(sort: Desc)])
+  @@index([tenant_id, user_id, created_at(sort: Desc)])
+  @@map("activities")
+}
+
+model AIUsage {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenant_id     String   @db.Uuid
+  month         String   @db.VarChar(7)
+  count         Int      @default(0)
+  input_tokens  Int      @default(0)
+  output_tokens Int      @default(0)
+  cost_usd      Decimal  @default(0) @db.Decimal(10, 4)
+  created_at    DateTime @default(now()) @db.Timestamptz(3)
+  updated_at    DateTime @updatedAt @db.Timestamptz(3)
+
+  @@unique([tenant_id, month])
+  @@index([tenant_id])
+  @@map("ai_usage")
+}
+
+model Webhook {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenant_id  String   @db.Uuid
+  url        String   @db.VarChar(500)
+  events     String[] @db.VarChar(50)
+  secret     String   @db.VarChar(255)
+  is_active  Boolean  @default(true)
+  created_at DateTime @default(now()) @db.Timestamptz(3)
+  updated_at DateTime @updatedAt @db.Timestamptz(3)
+
+  @@index([tenant_id])
+  @@map("webhooks")
+}
+
+model CatalogItem {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenant_id   String    @db.Uuid
+  name        String    @db.VarChar(255)
+  reference   String    @db.VarChar(100)
+  description String?
+  category    String    @db.VarChar(100)
+  price       Decimal   @db.Decimal(10, 2)
+  cost        Decimal?  @db.Decimal(10, 2)
+  stock       Int       @default(0)
+  min_stock   Int       @default(0)
+  image_url   String?   @db.VarChar(500)
+  metadata    Json?
+  created_at  DateTime  @default(now()) @db.Timestamptz(3)
+  updated_at  DateTime  @updatedAt @db.Timestamptz(3)
+  deleted_at  DateTime? @db.Timestamptz(3)
+  tenant      Tenant    @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@unique([tenant_id, reference])
+  @@index([tenant_id, category])
+  @@index([tenant_id, created_at(sort: Desc)])
+  @@map("catalog_items")
+}
+
+model Event {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenant_id   String    @db.Uuid
+  title       String    @db.VarChar(255)
+  description String?
+  start_date  DateTime  @db.Timestamptz(3)
+  end_date    DateTime  @db.Timestamptz(3)
+  all_day     Boolean   @default(false)
+  type        EventType @default(OTHER)
+  status      String?   @db.VarChar(50)
+  contact_id  String?   @db.Uuid
+  vehicle_id  String?   @db.Uuid
+  location    String?   @db.VarChar(255)
+  metadata    Json?
+  created_at  DateTime  @default(now()) @db.Timestamptz(3)
+  updated_at  DateTime  @updatedAt @db.Timestamptz(3)
+  deleted_at  DateTime? @db.Timestamptz(3)
+  tenant      Tenant    @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_id, start_date])
+  @@index([tenant_id, type])
+  @@index([tenant_id, created_at(sort: Desc)])
+  @@map("events")
+}
+
+model Conversation {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenant_id       String    @db.Uuid
+  contact_name    String    @db.VarChar(255)
+  contact_phone   String    @db.VarChar(20)
+  platform        Platform
+  unread_count    Int       @default(0)
+  archived        Boolean   @default(false)
+  last_message    String?
+  last_message_at DateTime? @db.Timestamptz(3)
+  created_at      DateTime  @default(now()) @db.Timestamptz(3)
+  updated_at      DateTime  @updatedAt @db.Timestamptz(3)
+  tenant          Tenant    @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  messages        Message[]
+
+  @@index([tenant_id, platform])
+  @@index([tenant_id, last_message_at(sort: Desc)])
+  @@map("conversations")
+}
+
+model Message {
+  id              String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  conversation_id String        @db.Uuid
+  content         String
+  sender          MessageSender
+  status          MessageStatus @default(SENT)
+  metadata        Json?
+  created_at      DateTime      @default(now()) @db.Timestamptz(3)
+  conversation    Conversation  @relation(fields: [conversation_id], references: [id], onDelete: Cascade)
+
+  @@index([conversation_id, created_at])
+  @@map("messages")
+}
+
+model EmailAccount {
+  id              String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenant_id       String        @db.Uuid
+  provider        EmailProvider
+  email           String        @db.VarChar(255)
+  name            String        @db.VarChar(255)
+  access_token    String?
+  refresh_token   String?
+  expires_at      DateTime?     @db.Timestamptz(3)
+  smtp_config     Json?
+  connected       Boolean       @default(false)
+  created_at      DateTime      @default(now()) @db.Timestamptz(3)
+  updated_at      DateTime      @updatedAt @db.Timestamptz(3)
+  tenant          Tenant        @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  emails_sent     Email[]       @relation("SentEmails")
+  emails_received Email[]       @relation("ReceivedEmails")
+
+  @@unique([tenant_id, email])
+  @@index([tenant_id])
+  @@map("email_accounts")
+}
+
+model Email {
+  id              String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  account_id      String        @db.Uuid
+  from_account_id String?       @db.Uuid
+  to_account_id   String?       @db.Uuid
+  from_email      String        @db.VarChar(255)
+  from_name       String        @db.VarChar(255)
+  to_emails       String[]      @db.VarChar(255)
+  subject         String        @db.VarChar(500)
+  body            String
+  html_body       String?
+  read            Boolean       @default(false)
+  starred         Boolean       @default(false)
+  folder          EmailFolder   @default(INBOX)
+  attachments     Json?
+  external_id     String?       @db.VarChar(255)
+  created_at      DateTime      @default(now()) @db.Timestamptz(3)
+  from_account    EmailAccount? @relation("SentEmails", fields: [from_account_id], references: [id])
+  to_account      EmailAccount? @relation("ReceivedEmails", fields: [to_account_id], references: [id])
+
+  @@index([account_id, folder, created_at(sort: Desc)])
+  @@index([from_account_id])
+  @@index([to_account_id])
+  @@map("emails")
+}
+
+model Document {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenant_id  String    @db.Uuid
+  name       String    @db.VarChar(255)
+  category   String    @db.VarChar(100)
+  file_url   String    @db.VarChar(500)
+  file_type  String    @db.VarChar(50)
+  file_size  Int
+  metadata   Json?
+  created_at DateTime  @default(now()) @db.Timestamptz(3)
+  updated_at DateTime  @updatedAt @db.Timestamptz(3)
+  deleted_at DateTime? @db.Timestamptz(3)
+  tenant     Tenant    @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_id, category])
+  @@index([tenant_id, created_at(sort: Desc)])
+  @@map("documents")
+}
+
+model AuditLog {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenant_id   String   @db.Uuid
+  user_id     String?  @db.Uuid
+  action      String   @db.VarChar(100)
+  entity_type String   @db.VarChar(50)
+  entity_id   String?  @db.Uuid
+  changes     Json?
+  ip_address  String?  @db.VarChar(45)
+  user_agent  String?  @db.VarChar(500)
+  created_at  DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([tenant_id, created_at(sort: Desc)])
+  @@index([tenant_id, user_id])
+  @@index([tenant_id, entity_type, entity_id])
+  @@map("audit_logs")
+}
+
+model VatRate {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenant_id  String   @db.Uuid
+  name       String   @db.VarChar(100)
+  rate       Decimal  @db.Decimal(5, 2)
+  is_default Boolean  @default(false)
+  is_active  Boolean  @default(true)
+  country    String?  @default("FR") @db.VarChar(2)
+  created_at DateTime @default(now()) @db.Timestamptz(3)
+  updated_at DateTime @updatedAt @db.Timestamptz(3)
+  tenant     Tenant   @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@unique([tenant_id, name])
+  @@index([tenant_id, is_active])
+  @@map("vat_rates")
+}
+
+model CustomPaymentMethod {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenant_id  String   @db.Uuid
+  name       String   @db.VarChar(100)
+  code       String   @db.VarChar(50)
+  is_active  Boolean  @default(true)
+  is_default Boolean  @default(false)
+  sort_order Int      @default(0)
+  created_at DateTime @default(now()) @db.Timestamptz(3)
+  updated_at DateTime @updatedAt @db.Timestamptz(3)
+  tenant     Tenant   @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@unique([tenant_id, code])
+  @@index([tenant_id, is_active])
+  @@map("custom_payment_methods")
+}
+
+model PaymentTerm {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenant_id  String   @db.Uuid
+  name       String   @db.VarChar(100)
+  days       Int
+  type       String   @db.VarChar(20)
+  is_default Boolean  @default(false)
+  is_active  Boolean  @default(true)
+  created_at DateTime @default(now()) @db.Timestamptz(3)
+  updated_at DateTime @updatedAt @db.Timestamptz(3)
+  tenant     Tenant   @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@unique([tenant_id, name])
+  @@index([tenant_id, is_active])
+  @@map("payment_terms")
+}
+
+model TaskCategory {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenant_id  String   @db.Uuid
+  name       String   @db.VarChar(100)
+  color      String?  @db.VarChar(7)
+  icon       String?  @db.VarChar(50)
+  is_default Boolean  @default(false)
+  is_active  Boolean  @default(true)
+  sort_order Int      @default(0)
+  created_at DateTime @default(now()) @db.Timestamptz(3)
+  updated_at DateTime @updatedAt @db.Timestamptz(3)
+  tenant     Tenant   @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@unique([tenant_id, name])
+  @@index([tenant_id, is_active])
+  @@map("task_categories")
+}
+
+model EmailTemplate {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenant_id    String   @db.Uuid
+  name         String   @db.VarChar(100)
+  subject      String   @db.VarChar(255)
+  body         String
+  category     String?  @db.VarChar(50)
+  variables    String[]
+  ai_generated Boolean  @default(false)
+  is_active    Boolean  @default(true)
+  created_at   DateTime @default(now()) @db.Timestamptz(3)
+  updated_at   DateTime @updatedAt @db.Timestamptz(3)
+  tenant       Tenant   @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@unique([tenant_id, name])
+  @@index([tenant_id, category])
+  @@index([tenant_id, is_active])
+  @@map("email_templates")
+}
+
+enum Plan {
+  FREE
+  STARTER
+  PRO
+  ENTERPRISE
+
+  @@map("plan")
+}
+
+enum Role {
+  SUPER_ADMIN
+  OWNER
+  MANAGER
+  USER
+  ACCOUNTANT
+
+  @@map("role")
+}
+
+enum QuoteStatus {
+  DRAFT
+  SENT
+  ACCEPTED
+  REJECTED
+  EXPIRED
+
+  @@map("quote_status")
+}
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  PAID
+  OVERDUE
+  CANCELLED
+
+  @@map("invoice_status")
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  BANK_TRANSFER
+  STRIPE
+  CHECK
+
+  @@map("payment_method")
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  DONE
+  CANCELLED
+
+  @@map("task_status")
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+
+  @@map("priority")
+}
+
+enum ActivityType {
+  EMAIL_SENT
+  EMAIL_RECEIVED
+  WHATSAPP_SENT
+  WHATSAPP_RECEIVED
+  SMS_SENT
+  CALL_MADE
+  CALL_RECEIVED
+  NOTE_ADDED
+  MEETING
+  SITE_VISIT
+  QUOTE_SENT
+  INVOICE_SENT
+  PAYMENT_RECEIVED
+
+  @@map("activity_type")
+}
+
+enum EventType {
+  MAINTENANCE
+  REPAIR
+  MEETING
+  CALL
+  SITE_VISIT
+  OTHER
+
+  @@map("event_type")
+}
+
+enum Platform {
+  WHATSAPP
+  TELEGRAM
+  SMS
+
+  @@map("platform")
+}
+
+enum MessageSender {
+  ME
+  THEM
+
+  @@map("message_sender")
+}
+
+enum MessageStatus {
+  SENT
+  DELIVERED
+  READ
+
+  @@map("message_status")
+}
+
+enum EmailProvider {
+  RESEND
+  GMAIL
+  OUTLOOK
+  ICLOUD
+  SMTP
+
+  @@map("email_provider")
+}
+
+enum EmailFolder {
+  INBOX
+  SENT
+  DRAFTS
+  STARRED
+  ARCHIVE
+  TRASH
+
+  @@map("email_folder")
+}
