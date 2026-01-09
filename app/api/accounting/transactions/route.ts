@@ -1,0 +1,224 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
+import { getCurrentTenantId } from '@/lib/tenant';
+import { bankTransactionSchema, bulkTransactionImportSchema } from '@/lib/accounting/validations';
+import { z } from 'zod';
+
+/**
+ * GET /api/accounting/transactions
+ * Get bank transactions with filters
+ */
+export async function GET(req: NextRequest) {
+  try {
+    const tenantId = await getCurrentTenantId();
+    if (!tenantId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const { searchParams } = new URL(req.url);
+    const accountId = searchParams.get('account_id');
+    const status = searchParams.get('status');
+    const type = searchParams.get('type');
+    const startDate = searchParams.get('start_date');
+    const endDate = searchParams.get('end_date');
+    const limit = parseInt(searchParams.get('limit') || '100');
+    const offset = parseInt(searchParams.get('offset') || '0');
+
+    const where: any = {
+      tenant_id: tenantId,
+    };
+
+    if (accountId) where.account_id = accountId;
+    if (status) where.status = status;
+    if (type) where.type = type;
+    if (startDate || endDate) {
+      where.date = {};
+      if (startDate) where.date.gte = new Date(startDate);
+      if (endDate) where.date.lte = new Date(endDate);
+    }
+
+    const [transactions, total] = await Promise.all([
+      prisma.bankTransaction.findMany({
+        where,
+        include: {
+          account: {
+            select: {
+              account_name: true,
+              bank_name: true,
+            },
+          },
+        },
+        orderBy: { date: 'desc' },
+        take: limit,
+        skip: offset,
+      }),
+      prisma.bankTransaction.count({ where }),
+    ]);
+
+    return NextResponse.json({
+      transactions,
+      pagination: {
+        total,
+        limit,
+        offset,
+        hasMore: offset + limit < total,
+      },
+    });
+  } catch (error) {
+    console.error('Error fetching transactions:', error);
+    return NextResponse.json(
+      { error: 'Failed to fetch transactions' },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * POST /api/accounting/transactions
+ * Create a new transaction or bulk import
+ */
+export async function POST(req: NextRequest) {
+  try {
+    const tenantId = await getCurrentTenantId();
+    if (!tenantId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const body = await req.json();
+
+    // Check if bulk import
+    if (body.transactions && Array.isArray(body.transactions)) {
+      return handleBulkImport(tenantId, body);
+    }
+
+    // Single transaction
+    const data = bankTransactionSchema.parse(body);
+
+    // Verify account belongs to tenant
+    const account = await prisma.bankAccount.findFirst({
+      where: {
+        id: data.account_id,
+        tenant_id: tenantId,
+        deleted_at: null,
+      },
+    });
+
+    if (!account) {
+      return NextResponse.json(
+        { error: 'Compte bancaire introuvable' },
+        { status: 404 }
+      );
+    }
+
+    const transaction = await prisma.bankTransaction.create({
+      data: {
+        ...data,
+        tenant_id: tenantId,
+      },
+      include: {
+        account: {
+          select: {
+            account_name: true,
+            bank_name: true,
+          },
+        },
+      },
+    });
+
+    // Update account balance
+    const balanceChange = data.type === 'CREDIT' ? data.amount : -data.amount;
+    await prisma.bankAccount.update({
+      where: { id: data.account_id },
+      data: {
+        balance: {
+          increment: balanceChange,
+        },
+      },
+    });
+
+    return NextResponse.json(transaction, { status: 201 });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: 'Données invalides', details: error.errors },
+        { status: 400 }
+      );
+    }
+    console.error('Error creating transaction:', error);
+    return NextResponse.json(
+      { error: 'Failed to create transaction' },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * Handle bulk transaction import
+ */
+async function handleBulkImport(tenantId: string, body: any) {
+  try {
+    const data = bulkTransactionImportSchema.parse(body);
+
+    // Verify account belongs to tenant
+    const account = await prisma.bankAccount.findFirst({
+      where: {
+        id: data.account_id,
+        tenant_id: tenantId,
+        deleted_at: null,
+      },
+    });
+
+    if (!account) {
+      return NextResponse.json(
+        { error: 'Compte bancaire introuvable' },
+        { status: 404 }
+      );
+    }
+
+    // Create all transactions
+    const transactions = await prisma.$transaction(
+      data.transactions.map((t) =>
+        prisma.bankTransaction.create({
+          data: {
+            tenant_id: tenantId,
+            account_id: data.account_id,
+            date: new Date(t.date),
+            amount: t.amount,
+            type: t.type,
+            description: t.description,
+            reference: t.reference,
+            status: 'PENDING',
+          },
+        })
+      )
+    );
+
+    // Update account balance
+    const balanceChange = data.transactions.reduce((sum, t) => {
+      return sum + (t.type === 'CREDIT' ? t.amount : -t.amount);
+    }, 0);
+
+    await prisma.bankAccount.update({
+      where: { id: data.account_id },
+      data: {
+        balance: {
+          increment: balanceChange,
+        },
+      },
+    });
+
+    return NextResponse.json({
+      success: true,
+      imported: transactions.length,
+      transactions,
+    }, { status: 201 });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: 'Données invalides', details: error.errors },
+        { status: 400 }
+      );
+    }
+    throw error;
+  }
+}

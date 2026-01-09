@@ -74,7 +74,61 @@ export type Permission =
 
   // Settings
   | 'view_settings'
-  | 'edit_settings';
+  | 'edit_settings'
+
+  // Accounting
+  | 'view_accounting'
+
+  // Bank Accounts
+  | 'view_bank_accounts'
+  | 'create_bank_accounts'
+  | 'edit_bank_accounts'
+  | 'delete_bank_accounts'
+  | 'reconcile_bank_accounts'
+
+  // Bank Transactions
+  | 'view_bank_transactions'
+  | 'create_bank_transactions'
+  | 'edit_bank_transactions'
+  | 'delete_bank_transactions'
+
+  // Expenses
+  | 'view_expenses'
+  | 'create_expenses'
+  | 'edit_expenses'
+  | 'approve_expenses'
+  | 'delete_expenses'
+
+  // Inventory
+  | 'view_inventory'
+  | 'create_inventory'
+  | 'edit_inventory'
+  | 'delete_inventory'
+
+  // Tax Documents
+  | 'view_tax_documents'
+  | 'upload_tax_documents'
+  | 'delete_tax_documents'
+
+  // Payroll
+  | 'view_payroll'
+  | 'upload_payroll'
+  | 'delete_payroll'
+
+  // Legal Documents
+  | 'view_legal_documents'
+  | 'upload_legal_documents'
+  | 'delete_legal_documents'
+
+  // Litigation
+  | 'view_litigation'
+  | 'create_litigation'
+  | 'edit_litigation'
+  | 'delete_litigation'
+
+  // Financial Reports
+  | 'view_financial_reports'
+  | 'generate_financial_reports';
 
 /**
  * Permission matrix: defines which permissions each role has
@@ -97,6 +151,17 @@ export const rolePermissions: Record<Role, Permission[]> = {
     'view_team', 'invite_members', 'edit_members', 'remove_members',
     'view_company', 'edit_company',
     'view_settings', 'edit_settings',
+    // Accounting
+    'view_accounting',
+    'view_bank_accounts', 'create_bank_accounts', 'edit_bank_accounts', 'delete_bank_accounts', 'reconcile_bank_accounts',
+    'view_bank_transactions', 'create_bank_transactions', 'edit_bank_transactions', 'delete_bank_transactions',
+    'view_expenses', 'create_expenses', 'edit_expenses', 'approve_expenses', 'delete_expenses',
+    'view_inventory', 'create_inventory', 'edit_inventory', 'delete_inventory',
+    'view_tax_documents', 'upload_tax_documents', 'delete_tax_documents',
+    'view_payroll', 'upload_payroll', 'delete_payroll',
+    'view_legal_documents', 'upload_legal_documents', 'delete_legal_documents',
+    'view_litigation', 'create_litigation', 'edit_litigation', 'delete_litigation',
+    'view_financial_reports', 'generate_financial_reports',
   ],
 
   OWNER: [
@@ -116,6 +181,17 @@ export const rolePermissions: Record<Role, Permission[]> = {
     'view_team', 'invite_members', 'edit_members', 'remove_members',
     'view_company', 'edit_company',
     'view_settings', 'edit_settings',
+    // Accounting
+    'view_accounting',
+    'view_bank_accounts', 'create_bank_accounts', 'edit_bank_accounts', 'delete_bank_accounts', 'reconcile_bank_accounts',
+    'view_bank_transactions', 'create_bank_transactions', 'edit_bank_transactions', 'delete_bank_transactions',
+    'view_expenses', 'create_expenses', 'edit_expenses', 'approve_expenses', 'delete_expenses',
+    'view_inventory', 'create_inventory', 'edit_inventory', 'delete_inventory',
+    'view_tax_documents', 'upload_tax_documents', 'delete_tax_documents',
+    'view_payroll', 'upload_payroll', 'delete_payroll',
+    'view_legal_documents', 'upload_legal_documents', 'delete_legal_documents',
+    'view_litigation', 'create_litigation', 'edit_litigation', 'delete_litigation',
+    'view_financial_reports', 'generate_financial_reports',
   ],
 
   MANAGER: [
@@ -135,10 +211,21 @@ export const rolePermissions: Record<Role, Permission[]> = {
     'view_team', 'invite_members', 'edit_members', // Cannot remove members
     'view_company', // Cannot edit company settings
     'view_settings',
+    // Accounting - most permissions except delete
+    'view_accounting',
+    'view_bank_accounts', 'create_bank_accounts', 'edit_bank_accounts', 'reconcile_bank_accounts',
+    'view_bank_transactions', 'create_bank_transactions', 'edit_bank_transactions',
+    'view_expenses', 'create_expenses', 'edit_expenses', 'approve_expenses',
+    'view_inventory', 'create_inventory', 'edit_inventory',
+    'view_tax_documents', 'upload_tax_documents',
+    'view_payroll', 'upload_payroll',
+    'view_legal_documents', 'upload_legal_documents',
+    'view_litigation', 'create_litigation', 'edit_litigation',
+    'view_financial_reports', 'generate_financial_reports',
   ],
 
   ACCOUNTANT: [
-    // Only accounting-related permissions
+    // Accounting-focused permissions
     'view_dashboard',
     'view_contacts', // View only for reference
     'view_vehicles', // View only for reference
@@ -147,6 +234,17 @@ export const rolePermissions: Record<Role, Permission[]> = {
     'view_catalog', // View only for pricing reference
     'view_reports',
     'view_company', // View only for invoicing data
+    // Full accounting permissions
+    'view_accounting',
+    'view_bank_accounts', 'create_bank_accounts', 'edit_bank_accounts', 'reconcile_bank_accounts',
+    'view_bank_transactions', 'create_bank_transactions', 'edit_bank_transactions',
+    'view_expenses', 'create_expenses', 'edit_expenses', 'approve_expenses',
+    'view_inventory', 'create_inventory', 'edit_inventory',
+    'view_tax_documents', 'upload_tax_documents',
+    'view_payroll', 'upload_payroll',
+    'view_legal_documents', 'upload_legal_documents',
+    'view_litigation', 'create_litigation', 'edit_litigation',
+    'view_financial_reports', 'generate_financial_reports',
   ],
 
   USER: [
@@ -215,7 +313,7 @@ export function getRoleDescription(role: Role): string {
     SUPER_ADMIN: 'Accès complet à toutes les fonctionnalités',
     OWNER: 'Propriétaire de l\'entreprise avec accès complet',
     MANAGER: 'Gestion complète sauf paramètres critiques',
-    ACCOUNTANT: 'Accès uniquement aux devis, factures et rapports comptables',
+    ACCOUNTANT: 'Accès complet au module comptabilité, devis, factures et rapports',
     USER: 'Employé avec accès aux fonctionnalités de base',
   };
   return descriptions[role] ?? '';

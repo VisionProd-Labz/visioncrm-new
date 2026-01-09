@@ -1,0 +1,89 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
+import { prisma } from '@/lib/prisma';
+import { payrollDocumentSchema } from '@/lib/accounting/validations';
+import { z } from 'zod';
+
+// Utility function to get current tenant ID
+async function getCurrentTenantId(): Promise<string> {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.tenantId) {
+    throw new Error('No tenant ID found in session');
+  }
+  return session.user.tenantId;
+}
+
+/**
+ * GET /api/accounting/documents/payroll
+ * List all payroll documents for the current tenant
+ */
+export async function GET(req: NextRequest) {
+  try {
+    const tenantId = await getCurrentTenantId();
+    const { searchParams } = new URL(req.url);
+
+    const year = searchParams.get('year');
+    const type = searchParams.get('type');
+
+    const where: any = {
+      tenant_id: tenantId,
+      deleted_at: null,
+    };
+
+    if (year) where.year = parseInt(year);
+    if (type) where.type = type;
+
+    const documents = await prisma.payrollDocument.findMany({
+      where,
+      orderBy: [{ year: 'desc' }, { period: 'desc' }],
+    });
+
+    return NextResponse.json({ documents });
+  } catch (error) {
+    console.error('Error fetching payroll documents:', error);
+    return NextResponse.json(
+      { error: 'Une erreur est survenue lors de la récupération des documents sociaux' },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * POST /api/accounting/documents/payroll
+ * Create a new payroll document
+ */
+export async function POST(req: NextRequest) {
+  try {
+    const tenantId = await getCurrentTenantId();
+    const session = await getServerSession(authOptions);
+    const body = await req.json();
+
+    // Validate request body
+    const data = payrollDocumentSchema.parse(body);
+
+    // Create document
+    const document = await prisma.payrollDocument.create({
+      data: {
+        ...data,
+        tenant_id: tenantId,
+        uploaded_by: session?.user?.id || null,
+      },
+    });
+
+    return NextResponse.json(document, { status: 201 });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: 'Données invalides', details: error.errors },
+        { status: 400 }
+      );
+    }
+
+    console.error('Error creating payroll document:', error);
+    return NextResponse.json(
+      { error: 'Une erreur est survenue lors de la création du document' },
+      { status: 500 }
+    );
+  }
+}

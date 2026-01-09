@@ -47,6 +47,16 @@ model Tenant {
   users                  User[]
   vat_rates              VatRate[]
   vehicles               Vehicle[]
+  bank_accounts          BankAccount[]
+  bank_transactions      BankTransaction[]
+  bank_reconciliations   BankReconciliation[]
+  expenses               Expense[]
+  inventory_items        InventoryItem[]
+  tax_documents          TaxDocument[]
+  payroll_documents      PayrollDocument[]
+  legal_documents        LegalDocument[]
+  financial_reports      FinancialReport[]
+  litigations            Litigation[]
 
   @@index([subdomain])
   @@index([stripe_customer_id])
@@ -193,6 +203,7 @@ model Contact {
   address       Json?
   tags          String[]   @db.VarChar(50)
   is_vip        Boolean    @default(false)
+  is_supplier   Boolean    @default(false)
   custom_fields Json?
   search_vector String?
   created_at    DateTime   @default(now()) @db.Timestamptz(3)
@@ -204,6 +215,7 @@ model Contact {
   quotes        Quote[]
   tasks         Task[]
   vehicles      Vehicle[]
+  expenses      Expense[]
 
   @@unique([tenant_id, email])
   @@index([tenant_id, created_at(sort: Desc)])
@@ -646,6 +658,309 @@ model EmailTemplate {
   @@map("email_templates")
 }
 
+// ===================================================================
+// ACCOUNTING MODULE - Bank & Financial Management
+// ===================================================================
+
+model BankAccount {
+  id                 String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenant_id          String               @db.Uuid
+  account_name       String               @db.VarChar(255)
+  account_number     String               @db.VarChar(50)
+  iban               String?              @db.VarChar(34)
+  bic                String?              @db.VarChar(11)
+  bank_name          String               @db.VarChar(255)
+  account_type       String               @default("CHECKING") @db.VarChar(50)
+  balance            Decimal              @default(0) @db.Decimal(15, 2)
+  currency           String               @default("EUR") @db.VarChar(3)
+  is_active          Boolean              @default(true)
+  last_reconciled_at DateTime?            @db.Timestamptz(3)
+  created_at         DateTime             @default(now()) @db.Timestamptz(3)
+  updated_at         DateTime             @updatedAt @db.Timestamptz(3)
+  deleted_at         DateTime?            @db.Timestamptz(3)
+  tenant             Tenant               @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  transactions       BankTransaction[]
+  reconciliations    BankReconciliation[]
+
+  @@unique([tenant_id, account_number])
+  @@index([tenant_id, is_active])
+  @@index([tenant_id, created_at(sort: Desc)])
+  @@map("bank_accounts")
+}
+
+model BankTransaction {
+  id                String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenant_id         String            @db.Uuid
+  account_id        String            @db.Uuid
+  date              DateTime          @db.Date
+  amount            Decimal           @db.Decimal(15, 2)
+  type              TransactionType
+  description       String            @db.VarChar(500)
+  reference         String?           @db.VarChar(100)
+  category          String?           @db.VarChar(100)
+  linked_invoice_id String?           @db.Uuid
+  linked_expense_id String?           @db.Uuid
+  status            TransactionStatus @default(PENDING)
+  reconciled_at     DateTime?         @db.Timestamptz(3)
+  metadata          Json?
+  created_at        DateTime          @default(now()) @db.Timestamptz(3)
+  updated_at        DateTime          @updatedAt @db.Timestamptz(3)
+  tenant            Tenant            @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  account           BankAccount       @relation(fields: [account_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_id, account_id, date(sort: Desc)])
+  @@index([tenant_id, status])
+  @@index([tenant_id, date(sort: Desc)])
+  @@map("bank_transactions")
+}
+
+model BankReconciliation {
+  id                  String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenant_id           String               @db.Uuid
+  account_id          String               @db.Uuid
+  reconciliation_date DateTime             @db.Date
+  statement_balance   Decimal              @db.Decimal(15, 2)
+  system_balance      Decimal              @db.Decimal(15, 2)
+  difference          Decimal              @db.Decimal(15, 2)
+  status              ReconciliationStatus @default(PENDING)
+  notes               String?
+  reconciled_by       String?              @db.Uuid
+  document_url        String?              @db.VarChar(500)
+  created_at          DateTime             @default(now()) @db.Timestamptz(3)
+  completed_at        DateTime?            @db.Timestamptz(3)
+  updated_at          DateTime             @updatedAt @db.Timestamptz(3)
+  tenant              Tenant               @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  account             BankAccount          @relation(fields: [account_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_id, account_id, reconciliation_date(sort: Desc)])
+  @@index([tenant_id, status])
+  @@map("bank_reconciliations")
+}
+
+// ===================================================================
+// ACCOUNTING MODULE - Expenses & Purchases
+// ===================================================================
+
+model Expense {
+  id              String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenant_id       String        @db.Uuid
+  expense_number  String        @unique @db.VarChar(50)
+  date            DateTime      @db.Date
+  vendor_id       String?       @db.Uuid
+  vendor_name     String        @db.VarChar(255)
+  category        ExpenseCategory
+  description     String        @db.VarChar(500)
+  amount_ht       Decimal       @db.Decimal(15, 2)
+  vat_rate        Decimal       @default(20.0) @db.Decimal(5, 2)
+  vat_amount      Decimal       @db.Decimal(15, 2)
+  amount_ttc      Decimal       @db.Decimal(15, 2)
+  payment_method  PaymentMethod?
+  status          ExpenseStatus @default(DRAFT)
+  approved_by     String?       @db.Uuid
+  approved_at     DateTime?     @db.Timestamptz(3)
+  paid_at         DateTime?     @db.Timestamptz(3)
+  notes           String?
+  receipt_url     String?       @db.VarChar(500)
+  metadata        Json?
+  created_at      DateTime      @default(now()) @db.Timestamptz(3)
+  updated_at      DateTime      @updatedAt @db.Timestamptz(3)
+  deleted_at      DateTime?     @db.Timestamptz(3)
+  tenant          Tenant        @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  vendor          Contact?      @relation(fields: [vendor_id], references: [id])
+
+  @@index([tenant_id, date(sort: Desc)])
+  @@index([tenant_id, status])
+  @@index([tenant_id, category])
+  @@index([tenant_id, vendor_id])
+  @@map("expenses")
+}
+
+// ===================================================================
+// ACCOUNTING MODULE - Inventory & Stock
+// ===================================================================
+
+model InventoryItem {
+  id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenant_id           String    @db.Uuid
+  catalog_item_id     String?   @db.Uuid
+  sku                 String    @db.VarChar(100)
+  name                String    @db.VarChar(255)
+  description         String?
+  category            String    @db.VarChar(100)
+  quantity            Int       @default(0)
+  unit_cost           Decimal   @db.Decimal(15, 2)
+  total_value         Decimal   @db.Decimal(15, 2)
+  reorder_point       Int       @default(0)
+  location            String?   @db.VarChar(255)
+  depreciation_rate   Decimal?  @db.Decimal(5, 2)
+  depreciated_value   Decimal?  @db.Decimal(15, 2)
+  last_counted_at     DateTime? @db.Date
+  last_counted_by     String?   @db.Uuid
+  notes               String?
+  created_at          DateTime  @default(now()) @db.Timestamptz(3)
+  updated_at          DateTime  @updatedAt @db.Timestamptz(3)
+  deleted_at          DateTime? @db.Timestamptz(3)
+  tenant              Tenant    @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@unique([tenant_id, sku])
+  @@index([tenant_id, category])
+  @@index([tenant_id, created_at(sort: Desc)])
+  @@map("inventory_items")
+}
+
+// ===================================================================
+// ACCOUNTING MODULE - Tax Documents
+// ===================================================================
+
+model TaxDocument {
+  id           String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenant_id    String          @db.Uuid
+  type         TaxDocumentType
+  period       String          @db.VarChar(10)
+  year         Int
+  file_url     String          @db.VarChar(500)
+  file_name    String          @db.VarChar(255)
+  file_size    Int?
+  amount       Decimal?        @db.Decimal(15, 2)
+  submitted    Boolean         @default(false)
+  submitted_at DateTime?       @db.Timestamptz(3)
+  due_date     DateTime?       @db.Date
+  metadata     Json?
+  notes        String?
+  created_at   DateTime        @default(now()) @db.Timestamptz(3)
+  updated_at   DateTime        @updatedAt @db.Timestamptz(3)
+  deleted_at   DateTime?       @db.Timestamptz(3)
+  tenant       Tenant          @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@unique([tenant_id, type, period])
+  @@index([tenant_id, type, year])
+  @@index([tenant_id, period(sort: Desc)])
+  @@map("tax_documents")
+}
+
+// ===================================================================
+// ACCOUNTING MODULE - Payroll & Social
+// ===================================================================
+
+model PayrollDocument {
+  id                   String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenant_id            String        @db.Uuid
+  month                String        @db.VarChar(7)
+  year                 Int
+  total_gross_wages    Decimal       @db.Decimal(15, 2)
+  total_net_wages      Decimal       @db.Decimal(15, 2)
+  total_social_charges Decimal       @db.Decimal(15, 2)
+  employee_count       Int           @default(0)
+  vacation_provision   Decimal?      @db.Decimal(15, 2)
+  file_url             String?       @db.VarChar(500)
+  file_name            String?       @db.VarChar(255)
+  status               PayrollStatus @default(DRAFT)
+  paid_at              DateTime?     @db.Timestamptz(3)
+  notes                String?
+  metadata             Json?
+  created_at           DateTime      @default(now()) @db.Timestamptz(3)
+  updated_at           DateTime      @updatedAt @db.Timestamptz(3)
+  deleted_at           DateTime?     @db.Timestamptz(3)
+  tenant               Tenant        @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@unique([tenant_id, month])
+  @@index([tenant_id, year, month(sort: Desc)])
+  @@index([tenant_id, status])
+  @@map("payroll_documents")
+}
+
+// ===================================================================
+// ACCOUNTING MODULE - Legal Documents
+// ===================================================================
+
+model LegalDocument {
+  id           String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenant_id    String            @db.Uuid
+  type         LegalDocumentType
+  name         String            @db.VarChar(255)
+  reference    String?           @db.VarChar(100)
+  file_url     String            @db.VarChar(500)
+  file_name    String            @db.VarChar(255)
+  file_size    Int?
+  issue_date   DateTime?         @db.Date
+  expiry_date  DateTime?         @db.Date
+  description  String?
+  notes        String?
+  metadata     Json?
+  created_at   DateTime          @default(now()) @db.Timestamptz(3)
+  updated_at   DateTime          @updatedAt @db.Timestamptz(3)
+  deleted_at   DateTime?         @db.Timestamptz(3)
+  tenant       Tenant            @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_id, type])
+  @@index([tenant_id, expiry_date])
+  @@index([tenant_id, created_at(sort: Desc)])
+  @@map("legal_documents")
+}
+
+// ===================================================================
+// ACCOUNTING MODULE - Financial Reports
+// ===================================================================
+
+model FinancialReport {
+  id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenant_id           String    @db.Uuid
+  period              String    @db.VarChar(10)
+  year                Int
+  month               Int?
+  total_revenue       Decimal   @db.Decimal(15, 2)
+  total_expenses      Decimal   @db.Decimal(15, 2)
+  total_vat_collected Decimal   @db.Decimal(15, 2)
+  total_vat_paid      Decimal   @db.Decimal(15, 2)
+  net_vat_due         Decimal   @db.Decimal(15, 2)
+  gross_profit        Decimal   @db.Decimal(15, 2)
+  net_profit          Decimal   @db.Decimal(15, 2)
+  cash_flow           Decimal   @db.Decimal(15, 2)
+  metadata            Json?
+  generated_at        DateTime  @default(now()) @db.Timestamptz(3)
+  tenant              Tenant    @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@unique([tenant_id, period])
+  @@index([tenant_id, year, month])
+  @@index([tenant_id, period(sort: Desc)])
+  @@map("financial_reports")
+}
+
+// ===================================================================
+// ACCOUNTING MODULE - Litigation Management
+// ===================================================================
+
+model Litigation {
+  id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenant_id          String    @db.Uuid
+  case_number        String?   @db.VarChar(100)
+  type               String    @db.VarChar(50)
+  party_name         String    @db.VarChar(255)
+  subject            String    @db.VarChar(500)
+  description        String?
+  amount_disputed    Decimal?  @db.Decimal(15, 2)
+  provision_amount   Decimal?  @db.Decimal(15, 2)
+  risk_level         String    @default("MEDIUM") @db.VarChar(20)
+  status             String    @default("ONGOING") @db.VarChar(50)
+  start_date         DateTime  @db.Date
+  expected_end_date  DateTime? @db.Date
+  actual_end_date    DateTime? @db.Date
+  lawyer_name        String?   @db.VarChar(255)
+  lawyer_fees        Decimal?  @db.Decimal(15, 2)
+  outcome            String?
+  notes              String?
+  metadata           Json?
+  created_at         DateTime  @default(now()) @db.Timestamptz(3)
+  updated_at         DateTime  @updatedAt @db.Timestamptz(3)
+  deleted_at         DateTime? @db.Timestamptz(3)
+  tenant             Tenant    @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_id, status])
+  @@index([tenant_id, start_date(sort: Desc)])
+  @@index([tenant_id, type])
+  @@map("litigations")
+}
+
 enum Plan {
   FREE
   STARTER
@@ -784,4 +1099,101 @@ enum EmailFolder {
   TRASH
 
   @@map("email_folder")
+}
+
+// ===================================================================
+// ACCOUNTING MODULE - Enums
+// ===================================================================
+
+enum TransactionType {
+  DEBIT
+  CREDIT
+
+  @@map("transaction_type")
+}
+
+enum TransactionStatus {
+  PENDING
+  RECONCILED
+  REJECTED
+
+  @@map("transaction_status")
+}
+
+enum ReconciliationStatus {
+  PENDING
+  COMPLETED
+  NEEDS_REVIEW
+
+  @@map("reconciliation_status")
+}
+
+enum ExpenseStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  PAID
+  REJECTED
+
+  @@map("expense_status")
+}
+
+enum ExpenseCategory {
+  RENT
+  UTILITIES
+  INSURANCE
+  OFFICE_SUPPLIES
+  MAINTENANCE
+  FUEL
+  VEHICLE
+  MARKETING
+  SALARIES
+  TAXES
+  RESTAURANT
+  TRAVEL
+  EQUIPMENT
+  SOFTWARE
+  PROFESSIONAL_FEES
+  BANK_FEES
+  INVENTORY
+  OTHER
+
+  @@map("expense_category")
+}
+
+enum TaxDocumentType {
+  TVA_RETURN
+  CORPORATE_TAX
+  INCOME_TAX
+  PAYROLL_TAX
+  PROPERTY_TAX
+  FEC
+  LIASSE_FISCALE
+  OTHER
+
+  @@map("tax_document_type")
+}
+
+enum PayrollStatus {
+  DRAFT
+  SUBMITTED
+  PAID
+
+  @@map("payroll_status")
+}
+
+enum LegalDocumentType {
+  CONTRACT
+  CERTIFICATE
+  INSURANCE
+  REGISTRATION
+  LICENSE
+  KBIS
+  STATUTES
+  AGO_PV
+  RCM_DECLARATION
+  LEASE
+  OTHER
+
+  @@map("legal_document_type")
 }

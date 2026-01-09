@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 
-export type ModuleType = 'vehicles' | 'quotes' | 'invoices' | 'tasks' | 'communications' | 'reports';
+export type ModuleType = 'vehicles' | 'quotes' | 'invoices' | 'tasks' | 'communications' | 'reports' | 'accounting';
 
 interface ModulesContextType {
   enabledModules: ModuleType[];
@@ -14,7 +14,7 @@ interface ModulesContextType {
 const ModulesContext = createContext<ModulesContextType | undefined>(undefined);
 
 // Modules activés par défaut
-const DEFAULT_MODULES: ModuleType[] = ['quotes', 'invoices', 'tasks', 'communications', 'reports'];
+const DEFAULT_MODULES: ModuleType[] = ['quotes', 'invoices', 'tasks', 'communications', 'reports', 'accounting'];
 
 export function ModulesProvider({ children }: { children: ReactNode }) {
   const [enabledModules, setEnabledModulesState] = useState<ModuleType[]>(DEFAULT_MODULES);

@@ -22,6 +22,12 @@ import {
   Calendar,
   Mail,
   UserCog,
+  TrendingUp,
+  Wallet,
+  ShoppingCart,
+  PackageSearch,
+  FolderOpen,
+  Scale,
 } from 'lucide-react';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { useSidebar } from '@/contexts/sidebar-context';
@@ -38,6 +44,15 @@ const mainNav = [
 const salesNav = [
   { key: 'nav.quotes', href: '/quotes', icon: FileText, module: 'quotes' as const },
   { key: 'nav.invoices', href: '/invoices', icon: Receipt, module: 'invoices' as const },
+];
+
+const accountingNav = [
+  { key: 'nav.accounting.dashboard', href: '/accounting', icon: BarChart3, module: 'accounting' as const },
+  { key: 'nav.accounting.bank', href: '/accounting/bank-reconciliation', icon: Wallet, module: 'accounting' as const },
+  { key: 'nav.accounting.expenses', href: '/accounting/expenses', icon: ShoppingCart, module: 'accounting' as const },
+  { key: 'nav.accounting.inventory', href: '/accounting/inventory', icon: PackageSearch, module: 'accounting' as const },
+  { key: 'nav.accounting.documents', href: '/accounting/documents', icon: FolderOpen, module: 'accounting' as const },
+  { key: 'nav.accounting.reports', href: '/accounting/reports', icon: TrendingUp, module: 'accounting' as const },
 ];
 
 const toolsNav = [
@@ -141,6 +156,7 @@ export function Sidebar() {
       <nav className="flex-1 px-3 py-4 overflow-y-auto">
         {renderNavSection('nav.section.main', mainNav)}
         {renderNavSection('nav.section.sales', salesNav)}
+        {renderNavSection('nav.section.accounting', accountingNav)}
         {renderNavSection('nav.section.tools', toolsNav)}
       </nav>
 
