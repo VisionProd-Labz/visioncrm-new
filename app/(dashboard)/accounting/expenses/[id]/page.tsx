@@ -79,9 +79,10 @@ const paymentMethodLabels: Record<string, string> = {
 export default async function ExpenseDetailPage({
   params,
 }: {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }) {
-  const expense = await getExpense(params.id);
+  const { id } = await params;
+  const expense = await getExpense(id);
 
   if (!expense) {
     notFound();

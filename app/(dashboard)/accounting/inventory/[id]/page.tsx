@@ -39,9 +39,10 @@ async function getInventoryItem(id: string) {
 export default async function InventoryDetailPage({
   params,
 }: {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }) {
-  const item = await getInventoryItem(params.id);
+  const { id } = await params;
+  const item = await getInventoryItem(id);
 
   if (!item) {
     notFound();
