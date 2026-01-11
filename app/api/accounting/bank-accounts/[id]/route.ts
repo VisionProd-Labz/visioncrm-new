@@ -10,9 +10,11 @@ import { z } from 'zod';
  */
 export async function GET(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
+    const { id } = await params;
     const tenantId = await getCurrentTenantId();
     if (!tenantId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -20,7 +22,7 @@ export async function GET(
 
     const account = await prisma.bankAccount.findFirst({
       where: {
-        id: params.id,
+        id,
         tenant_id: tenantId,
         deleted_at: null,
       },
@@ -58,9 +60,11 @@ export async function GET(
  */
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
+    const { id } = await params;
     const tenantId = await getCurrentTenantId();
     if (!tenantId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -72,7 +76,7 @@ export async function PATCH(
     // Check if account exists and belongs to tenant
     const existing = await prisma.bankAccount.findFirst({
       where: {
-        id: params.id,
+        id,
         tenant_id: tenantId,
         deleted_at: null,
       },
@@ -89,7 +93,7 @@ export async function PATCH(
           tenant_id: tenantId,
           account_number: data.account_number,
           deleted_at: null,
-          id: { not: params.id },
+          id: { not: id },
         },
       });
 
@@ -102,7 +106,7 @@ export async function PATCH(
     }
 
     const account = await prisma.bankAccount.update({
-      where: { id: params.id },
+      where: { id },
       data,
       include: {
         _count: {
@@ -136,9 +140,11 @@ export async function PATCH(
  */
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
+    const { id } = await params;
     const tenantId = await getCurrentTenantId();
     if (!tenantId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -147,7 +153,7 @@ export async function DELETE(
     // Check if account exists and belongs to tenant
     const existing = await prisma.bankAccount.findFirst({
       where: {
-        id: params.id,
+        id,
         tenant_id: tenantId,
         deleted_at: null,
       },
@@ -174,7 +180,7 @@ export async function DELETE(
 
     // Soft delete
     await prisma.bankAccount.update({
-      where: { id: params.id },
+      where: { id },
       data: { deleted_at: new Date() },
     });
 

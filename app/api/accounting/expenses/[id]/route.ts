@@ -12,9 +12,10 @@ import { z } from 'zod';
  */
 export async function GET(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     const tenantId = await getCurrentTenantId();
     if (!tenantId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -22,7 +23,7 @@ export async function GET(
 
     const expense = await prisma.expense.findFirst({
       where: {
-        id: params.id,
+        id,
         tenant_id: tenantId,
         deleted_at: null,
       },
@@ -60,9 +61,10 @@ export async function GET(
  */
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     const tenantId = await getCurrentTenantId();
     if (!tenantId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -74,7 +76,7 @@ export async function PATCH(
     // Check if expense exists and belongs to tenant
     const existing = await prisma.expense.findFirst({
       where: {
-        id: params.id,
+        id,
         tenant_id: tenantId,
         deleted_at: null,
       },
@@ -111,7 +113,7 @@ export async function PATCH(
     }
 
     const expense = await prisma.expense.update({
-      where: { id: params.id },
+      where: { id },
       data: {
         ...data,
         ...(data.date && { date: new Date(data.date) }),
@@ -150,9 +152,10 @@ export async function PATCH(
  */
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     const tenantId = await getCurrentTenantId();
     if (!tenantId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -161,7 +164,7 @@ export async function DELETE(
     // Check if expense exists and belongs to tenant
     const existing = await prisma.expense.findFirst({
       where: {
-        id: params.id,
+        id,
         tenant_id: tenantId,
         deleted_at: null,
       },
@@ -181,7 +184,7 @@ export async function DELETE(
 
     // Soft delete
     await prisma.expense.update({
-      where: { id: params.id },
+      where: { id },
       data: { deleted_at: new Date() },
     });
 

@@ -10,9 +10,10 @@ import { authOptions } from '@/lib/auth';
  */
 export async function POST(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     const tenantId = await getCurrentTenantId();
     if (!tenantId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -26,7 +27,7 @@ export async function POST(
     // Check if expense exists and belongs to tenant
     const existing = await prisma.expense.findFirst({
       where: {
-        id: params.id,
+        id,
         tenant_id: tenantId,
         deleted_at: null,
       },
@@ -46,7 +47,7 @@ export async function POST(
 
     // Approve the expense
     const expense = await prisma.expense.update({
-      where: { id: params.id },
+      where: { id },
       data: {
         status: 'APPROVED',
         approved_by: session.user.id,

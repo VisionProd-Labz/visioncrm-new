@@ -20,14 +20,15 @@ async function getCurrentTenantId(): Promise<string> {
  */
 export async function GET(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     const tenantId = await getCurrentTenantId();
 
     const item = await prisma.inventoryItem.findFirst({
       where: {
-        id: params.id,
+        id,
         tenant_id: tenantId,
         deleted_at: null,
       },
@@ -56,9 +57,10 @@ export async function GET(
  */
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     const tenantId = await getCurrentTenantId();
     const body = await req.json();
 
@@ -68,7 +70,7 @@ export async function PATCH(
     // Check if item exists
     const existing = await prisma.inventoryItem.findFirst({
       where: {
-        id: params.id,
+        id,
         tenant_id: tenantId,
         deleted_at: null,
       },
@@ -88,7 +90,7 @@ export async function PATCH(
           tenant_id: tenantId,
           sku: data.sku,
           deleted_at: null,
-          id: { not: params.id },
+          id: { not: id },
         },
       });
 
@@ -102,7 +104,7 @@ export async function PATCH(
 
     // Update item
     const item = await prisma.inventoryItem.update({
-      where: { id: params.id },
+      where: { id },
       data,
     });
 
@@ -129,15 +131,16 @@ export async function PATCH(
  */
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     const tenantId = await getCurrentTenantId();
 
     // Check if item exists
     const existing = await prisma.inventoryItem.findFirst({
       where: {
-        id: params.id,
+        id,
         tenant_id: tenantId,
         deleted_at: null,
       },
@@ -152,7 +155,7 @@ export async function DELETE(
 
     // Soft delete
     await prisma.inventoryItem.update({
-      where: { id: params.id },
+      where: { id },
       data: { deleted_at: new Date() },
     });
 
