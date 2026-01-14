@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getCurrentTenantId } from '@/lib/tenant';
+import { getCurrentTenantId, requireTenantId } from '@/lib/tenant';
 import { z } from 'zod';
 
 const messageSchema = z.object({
@@ -21,7 +21,7 @@ export async function GET(
   const { id } = await params;
 
   try {
-    const tenantId = await getCurrentTenantId();
+    const tenantId = await requireTenantId();
 
     // Verify conversation belongs to tenant
     const conversation = await prisma.conversation.findFirst({
@@ -67,7 +67,7 @@ export async function POST(
   const { id } = await params;
 
   try {
-    const tenantId = await getCurrentTenantId();
+    const tenantId = await requireTenantId();
     const body = await req.json();
 
     // Validate input

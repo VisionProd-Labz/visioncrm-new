@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getCurrentTenantId } from '@/lib/tenant';
+import { getCurrentTenantId, requireTenantId } from '@/lib/tenant';
 import { invoiceSchema } from '@/lib/validations';
 import { sendInvoiceEmail } from '@/lib/email';
 import { z } from 'zod';
@@ -55,7 +55,7 @@ function calculateTotals(items: any[]) {
  */
 export async function GET(req: Request) {
   try {
-    const tenantId = await getCurrentTenantId();
+    const tenantId = await requireTenantId();
     const { searchParams } = new URL(req.url);
 
     const contactId = searchParams.get('contact_id');
@@ -112,7 +112,7 @@ export async function GET(req: Request) {
  */
 export async function POST(req: Request) {
   try {
-    const tenantId = await getCurrentTenantId();
+    const tenantId = await requireTenantId();
     const body = await req.json();
 
     // Validate input

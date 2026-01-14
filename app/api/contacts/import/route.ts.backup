@@ -1,0 +1,132 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
+import { prisma } from '@/lib/prisma';
+import { z } from 'zod';
+
+const ContactSchema = z.object({
+  first_name: z.string().min(1),
+  last_name: z.string().min(1),
+  email: z.string().email().optional().nullable(),
+  phone: z.string().optional().nullable(),
+  company: z.string().optional().nullable(),
+  address: z.object({
+    street: z.string().optional().nullable(),
+    city: z.string().optional().nullable(),
+    postalCode: z.string().optional().nullable(),
+    country: z.string().optional().nullable(),
+  }).optional().nullable(),
+  is_vip: z.boolean().optional(),
+});
+
+export async function POST(request: NextRequest) {
+  try {
+    const session = await getServerSession(authOptions);
+
+    if (!session?.user?.email) {
+      return NextResponse.json(
+        { error: 'Non authentifié' },
+        { status: 401 }
+      );
+    }
+
+    // Get user and tenant
+    const user = await prisma.user.findUnique({
+      where: { email: session.user.email },
+      select: { id: true, tenantId: true },
+    });
+
+    if (!user?.tenantId) {
+      return NextResponse.json(
+        { error: 'Tenant non trouvé' },
+        { status: 404 }
+      );
+    }
+
+    const { contacts } = await request.json();
+
+    if (!Array.isArray(contacts) || contacts.length === 0) {
+      return NextResponse.json(
+        { error: 'Aucun contact à importer' },
+        { status: 400 }
+      );
+    }
+
+    // Validate and import contacts
+    let imported = 0;
+    let failed = 0;
+    const errors: string[] = [];
+
+    for (const contactData of contacts) {
+      try {
+        // Validate contact data
+        const validatedData = ContactSchema.parse(contactData);
+
+        // Check if contact already exists (by email or name combination)
+        const existingContact = validatedData.email
+          ? await prisma.contact.findFirst({
+              where: {
+                tenant_id: user.tenantId,
+                email: validatedData.email,
+              },
+            })
+          : await prisma.contact.findFirst({
+              where: {
+                tenant_id: user.tenantId,
+                first_name: validatedData.first_name,
+                last_name: validatedData.last_name,
+              },
+            });
+
+        if (existingContact) {
+          // Skip duplicate
+          failed++;
+          errors.push(
+            `Contact ${validatedData.first_name} ${validatedData.last_name} existe déjà`
+          );
+          continue;
+        }
+
+        // Create contact
+        await prisma.contact.create({
+          data: {
+            tenant_id: user.tenantId,
+            first_name: validatedData.first_name,
+            last_name: validatedData.last_name,
+            email: validatedData.email || undefined,
+            phone: validatedData.phone || undefined,
+            company: validatedData.company || undefined,
+            address: validatedData.address || undefined,
+            is_vip: validatedData.is_vip || false,
+            tags: [],
+          },
+        });
+
+        imported++;
+      } catch (error) {
+        failed++;
+        if (error instanceof z.ZodError) {
+          errors.push(
+            `Ligne invalide : ${error.errors.map(e => e.message).join(', ')}`
+          );
+        } else {
+          errors.push(`Erreur lors de l'importation d'un contact`);
+        }
+      }
+    }
+
+    return NextResponse.json({
+      success: true,
+      imported,
+      failed,
+      total: contacts.length,
+      errors: errors.slice(0, 10), // Return first 10 errors
+    });
+  } catch (error) {
+    console.error('Error importing contacts:', error);
+    return NextResponse.json(
+      { error: 'Erreur lors de l\'importation des contacts' },
+      { status: 500 }
+    );
+  }
+}

@@ -1,16 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { auth } from '@/auth';
 import { prisma } from '@/lib/prisma';
+import { requireTenantId } from '@/lib/tenant';
 
 // Utility function to get current tenant ID
-async function getCurrentTenantId(): Promise<string> {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.tenantId) {
-    throw new Error('No tenant ID found in session');
-  }
-  return session.user.tenantId;
-}
 
 /**
  * GET /api/accounting/reports
@@ -18,7 +11,7 @@ async function getCurrentTenantId(): Promise<string> {
  */
 export async function GET(req: NextRequest) {
   try {
-    const tenantId = await getCurrentTenantId();
+    const tenantId = await requireTenantId();
     const { searchParams } = new URL(req.url);
 
     const year = searchParams.get('year');
@@ -53,8 +46,8 @@ export async function GET(req: NextRequest) {
  */
 export async function POST(req: NextRequest) {
   try {
-    const tenantId = await getCurrentTenantId();
-    const session = await getServerSession(authOptions);
+    const tenantId = await requireTenantId();
+    const session = await auth();
     const body = await req.json();
 
     const { report_type, year, period } = body;
@@ -71,14 +64,14 @@ export async function POST(req: NextRequest) {
     const reportData = await generateReportData(tenantId, report_type, year, period);
 
     // Create report record
+    const { metadata, ...rest } = reportData;
     const report = await prisma.financialReport.create({
       data: {
         tenant_id: tenantId,
-        report_type,
+        ...rest,
         year,
         period,
-        data: reportData,
-        generated_by: session?.user?.id || null,
+        ...(metadata && { metadata }),
       },
     });
 
@@ -210,7 +203,6 @@ async function generateCashFlow(tenantId: string, startDate: Date, endDate: Date
     where: {
       tenant_id: tenantId,
       date: { gte: startDate, lte: endDate },
-      deleted_at: null,
     },
   });
 

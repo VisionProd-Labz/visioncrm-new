@@ -1,18 +1,37 @@
-import { getServerSession } from 'next-auth';
-import { authOptions } from './auth';
+import { auth } from '@/auth';
 import { prisma } from './prisma';
 
 /**
  * Get current tenant ID from session
+ * Auth.js v5 compatible
+ * Returns null if no session or tenant context
  */
-export async function getCurrentTenantId(): Promise<string> {
-  const session = await getServerSession(authOptions);
+export async function getCurrentTenantId(): Promise<string | null> {
+  const session = await auth();
 
-  if (!session?.user?.tenantId) {
-    throw new Error('Unauthorized: No tenant context');
+  if (!session?.user) {
+    return null;
   }
 
-  return session.user.tenantId;
+  const tenantId = (session.user as any).tenantId;
+
+  if (!tenantId) {
+    return null;
+  }
+
+  return tenantId;
+}
+
+/**
+ * Get current tenant ID or throw error
+ * Use this in API routes where tenant ID is required
+ */
+export async function requireTenantId(): Promise<string> {
+  const tenantId = await getCurrentTenantId();
+  if (!tenantId) {
+    throw new Error('UNAUTHORIZED: No tenant ID found');
+  }
+  return tenantId;
 }
 
 /**
@@ -20,6 +39,10 @@ export async function getCurrentTenantId(): Promise<string> {
  */
 export async function getCurrentTenant() {
   const tenantId = await getCurrentTenantId();
+
+  if (!tenantId) {
+    throw new Error('No tenant ID found in session');
+  }
 
   const tenant = await prisma.tenant.findUnique({
     where: { id: tenantId },
@@ -36,7 +59,7 @@ export async function getCurrentTenant() {
  * Get current user from session
  */
 export async function getCurrentUser() {
-  const session = await getServerSession(authOptions);
+  const session = await auth();
 
   if (!session?.user?.id) {
     throw new Error('Unauthorized: No user context');

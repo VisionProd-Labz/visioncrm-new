@@ -61,7 +61,7 @@ function getInitialLanguage(): Language {
 
 export function LanguageProvider({ children }: { children: ReactNode }) {
   const [language, setLanguageState] = useState<Language>(getInitialLanguage());
-  const [translations, setTranslations] = useState<Record<string, string>>({});
+  const [translations, setTranslations] = useState<any>({});
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -85,7 +85,25 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
 
   const t = (key: string): string => {
     if (isLoading) return ''; // Retourner vide pendant le chargement
-    return translations[key] || key;
+
+    // First, try to find the key as-is (flat key like "dashboard.title")
+    if (key in translations && typeof translations[key] === 'string') {
+      return translations[key];
+    }
+
+    // If not found, try nested path (like "planning.day.sun")
+    const keys = key.split('.');
+    let value: any = translations;
+
+    for (const k of keys) {
+      if (value && typeof value === 'object' && k in value) {
+        value = value[k];
+      } else {
+        return key; // Return key if path not found
+      }
+    }
+
+    return typeof value === 'string' ? value : key;
   };
 
   return (

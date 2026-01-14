@@ -57,6 +57,8 @@ model Tenant {
   legal_documents        LegalDocument[]
   financial_reports      FinancialReport[]
   litigations            Litigation[]
+  projects               Project[]
+  email_logs             EmailLog[]
 
   @@index([subdomain])
   @@index([stripe_customer_id])
@@ -178,18 +180,71 @@ model TeamInvitation {
 }
 
 model UserConsent {
-  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  user_id          String    @db.Uuid
-  marketing_emails Boolean   @default(false)
-  analytics        Boolean   @default(false)
-  data_sharing     Boolean   @default(false)
-  granted_at       DateTime  @default(now()) @db.Timestamptz(3)
-  revoked_at       DateTime? @db.Timestamptz(3)
-  ip_address       String?   @db.VarChar(45)
-  user             User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id           String    @db.Uuid
+  consent_type      ConsentType
+  is_granted        Boolean   @default(false)
+  granted_at        DateTime  @default(now()) @db.Timestamptz(3)
+  updated_at        DateTime  @updatedAt @db.Timestamptz(3)
+  revoked_at        DateTime? @db.Timestamptz(3)
+  ip_address        String?   @db.VarChar(45)
+  user_agent        String?   @db.VarChar(500)
+  user              User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
+  @@unique([user_id, consent_type])
   @@index([user_id])
+  @@index([consent_type])
   @@map("user_consents")
+}
+
+model DsarRequest {
+  id            String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id       String         @db.Uuid
+  request_type  DsarRequestType
+  status        DsarStatus     @default(PENDING)
+  requested_at  DateTime       @default(now()) @db.Timestamptz(3)
+  completed_at  DateTime?      @db.Timestamptz(3)
+  data_url      String?        @db.VarChar(500)
+  notes         String?
+  ip_address    String?        @db.VarChar(45)
+  user_agent    String?        @db.VarChar(500)
+
+  @@index([user_id, status])
+  @@index([requested_at(sort: Desc)])
+  @@map("dsar_requests")
+}
+
+model AccessLog {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id       String?  @db.Uuid
+  tenant_id     String?  @db.Uuid
+  action        String   @db.VarChar(100)
+  resource_type String   @db.VarChar(50)
+  resource_id   String?  @db.Uuid
+  ip_address    String?  @db.VarChar(45)
+  user_agent    String?  @db.VarChar(500)
+  metadata      Json?
+  created_at    DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([user_id, created_at(sort: Desc)])
+  @@index([tenant_id, created_at(sort: Desc)])
+  @@index([resource_type, resource_id])
+  @@map("access_logs")
+}
+
+model DataRetentionPolicy {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenant_id       String    @db.Uuid
+  entity_type     String    @db.VarChar(100)
+  retention_days  Int
+  is_active       Boolean   @default(true)
+  last_purge_at   DateTime? @db.Timestamptz(3)
+  created_at      DateTime  @default(now()) @db.Timestamptz(3)
+  updated_at      DateTime  @updatedAt @db.Timestamptz(3)
+
+  @@unique([tenant_id, entity_type])
+  @@index([tenant_id, is_active])
+  @@map("data_retention_policies")
 }
 
 model Contact {
@@ -216,6 +271,7 @@ model Contact {
   tasks         Task[]
   vehicles      Vehicle[]
   expenses      Expense[]
+  projects      Project[]
 
   @@unique([tenant_id, email])
   @@index([tenant_id, created_at(sort: Desc)])
@@ -285,6 +341,7 @@ model Quote {
   updated_at   DateTime    @updatedAt @db.Timestamptz(3)
   deleted_at   DateTime?   @db.Timestamptz(3)
   invoice      Invoice?
+  projects     Project[]
   contact      Contact     @relation(fields: [contact_id], references: [id])
   tenant       Tenant      @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
 
@@ -334,6 +391,7 @@ model Task {
   description  String?
   assignee_id  String?    @db.Uuid
   contact_id   String?    @db.Uuid
+  project_id   String?    @map("project_id") @db.Uuid
   due_date     DateTime?  @db.Timestamptz(3)
   completed_at DateTime?  @db.Timestamptz(3)
   status       TaskStatus @default(TODO)
@@ -343,6 +401,7 @@ model Task {
   deleted_at   DateTime?  @db.Timestamptz(3)
   assignee     User?      @relation("TaskAssignee", fields: [assignee_id], references: [id])
   contact      Contact?   @relation(fields: [contact_id], references: [id], onDelete: Cascade)
+  project      Project?   @relation(fields: [project_id], references: [id], onDelete: Cascade)
   tenant       Tenant     @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
 
   @@index([tenant_id, status])
@@ -1196,4 +1255,107 @@ enum LegalDocumentType {
   OTHER
 
   @@map("legal_document_type")
+}
+
+// ===================================================================
+// RGPD MODULE - Enums
+// ===================================================================
+
+enum ConsentType {
+  MARKETING_EMAIL
+  MARKETING_SMS
+  DATA_PROCESSING
+  ANALYTICS
+  THIRD_PARTY_SHARING
+
+  @@map("consent_type")
+}
+
+enum DsarRequestType {
+  ACCESS
+  RECTIFICATION
+  ERASURE
+  PORTABILITY
+  RESTRICTION
+  OBJECTION
+
+  @@map("dsar_request_type")
+}
+
+enum DsarStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  REJECTED
+
+  @@map("dsar_status")
+}
+
+// ===================================================================
+// PROJECT MANAGEMENT MODULE
+// ===================================================================
+
+model Project {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenant_id   String    @map("tenant_id") @db.Uuid
+  name        String    @db.VarChar(255)
+  description String?
+  status      ProjectStatus @default(PLANNING)
+  contact_id  String?   @map("contact_id") @db.Uuid
+  quote_id    String?   @map("quote_id") @db.Uuid
+  start_date  DateTime? @map("start_date") @db.Timestamptz(3)
+  end_date    DateTime? @map("end_date") @db.Timestamptz(3)
+  created_by  String    @map("created_by") @db.Uuid
+  created_at  DateTime  @default(now()) @db.Timestamptz(3)
+  updated_at  DateTime  @updatedAt @db.Timestamptz(3)
+  deleted_at  DateTime? @db.Timestamptz(3)
+
+  tenant     Tenant   @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  contact    Contact? @relation(fields: [contact_id], references: [id], onDelete: SetNull)
+  quote      Quote?   @relation(fields: [quote_id], references: [id], onDelete: SetNull)
+  tasks      Task[]
+
+  @@index([tenant_id])
+  @@index([tenant_id, status])
+  @@index([contact_id])
+  @@index([quote_id])
+  @@index([created_at(sort: Desc)])
+  @@map("projects")
+}
+
+model EmailLog {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenant_id  String   @map("tenant_id") @db.Uuid
+  to         String   @db.VarChar(255)
+  subject    String   @db.VarChar(500)
+  body       String
+  template   String   @db.VarChar(100)
+  status     EmailStatus @default(SENT)
+  sent_by    String   @map("sent_by") @db.Uuid
+  created_at DateTime @default(now()) @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_id])
+  @@index([tenant_id, created_at(sort: Desc)])
+  @@index([to])
+  @@map("email_logs")
+}
+
+enum ProjectStatus {
+  PLANNING
+  IN_PROGRESS
+  ON_HOLD
+  COMPLETED
+  CANCELLED
+
+  @@map("project_status")
+}
+
+enum EmailStatus {
+  SENT
+  FAILED
+  BOUNCED
+
+  @@map("email_status")
 }

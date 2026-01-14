@@ -1,0 +1,102 @@
+import { NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
+import { prisma } from '@/lib/prisma';
+import { getCurrentTenantId } from '@/lib/tenant';
+import { z } from 'zod';
+
+const taskCategorySchema = z.object({
+  name: z.string().min(1).max(100),
+  color: z.string().regex(/^#[0-9A-F]{6}$/i).optional(),
+  icon: z.string().max(50).optional(),
+  is_default: z.boolean().optional(),
+  is_active: z.boolean().optional(),
+  sort_order: z.number().optional(),
+});
+
+// GET /api/settings/task-categories
+export async function GET(req: Request) {
+  try {
+    const session = await getServerSession(authOptions);
+
+    if (!session?.user) {
+      return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
+    }
+
+    const tenantId = await getCurrentTenantId();
+
+    if (!tenantId) {
+      return NextResponse.json({ error: 'Tenant non trouvé' }, { status: 404 });
+    }
+
+    const categories = await prisma.taskCategory.findMany({
+      where: {
+        tenant_id: tenantId,
+      },
+      orderBy: [
+        { sort_order: 'asc' },
+        { name: 'asc' },
+      ],
+    });
+
+    return NextResponse.json({ categories });
+  } catch (error) {
+    console.error('Error fetching task categories:', error);
+    return NextResponse.json(
+      { error: 'Erreur lors de la récupération des catégories de tâches' },
+      { status: 500 }
+    );
+  }
+}
+
+// POST /api/settings/task-categories
+export async function POST(req: Request) {
+  try {
+    const session = await getServerSession(authOptions);
+
+    if (!session?.user) {
+      return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
+    }
+
+    const tenantId = await getCurrentTenantId();
+
+    if (!tenantId) {
+      return NextResponse.json({ error: 'Tenant non trouvé' }, { status: 404 });
+    }
+
+    const body = await req.json();
+    const data = taskCategorySchema.parse(body);
+
+    // If this is set as default, unset other defaults
+    if (data.is_default) {
+      await prisma.taskCategory.updateMany({
+        where: {
+          tenant_id: tenantId,
+          is_default: true,
+        },
+        data: {
+          is_default: false,
+        },
+      });
+    }
+
+    const category = await prisma.taskCategory.create({
+      data: {
+        ...data,
+        tenant_id: tenantId,
+      },
+    });
+
+    return NextResponse.json(category, { status: 201 });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json({ error: error.errors }, { status: 400 });
+    }
+
+    console.error('Error creating task category:', error);
+    return NextResponse.json(
+      { error: 'Erreur lors de la création de la catégorie de tâche' },
+      { status: 500 }
+    );
+  }
+}

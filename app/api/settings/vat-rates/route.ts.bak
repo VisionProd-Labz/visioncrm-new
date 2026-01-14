@@ -1,0 +1,100 @@
+import { NextResponse } from 'next/server';
+import { auth } from '@/auth';
+import { prisma } from '@/lib/prisma';
+import { getCurrentTenantId } from '@/lib/tenant';
+import { z } from 'zod';
+
+const vatRateSchema = z.object({
+  name: z.string().min(1).max(100),
+  rate: z.number().min(0).max(100),
+  country: z.string().length(2).optional(),
+  is_default: z.boolean().optional(),
+  is_active: z.boolean().optional(),
+});
+
+// GET /api/settings/vat-rates - List VAT rates
+export async function GET(req: Request) {
+  try {
+    const session = await auth();
+
+    if (!session?.user) {
+      return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
+    }
+
+    const tenantId = await getCurrentTenantId();
+
+    if (!tenantId) {
+      return NextResponse.json({ error: 'Tenant non trouvé' }, { status: 404 });
+    }
+
+    const rates = await prisma.vatRate.findMany({
+      where: {
+        tenant_id: tenantId,
+      },
+      orderBy: [
+        { is_default: 'desc' },
+        { rate: 'desc' },
+      ],
+    });
+
+    return NextResponse.json({ rates });
+  } catch (error) {
+    console.error('Error fetching VAT rates:', error);
+    return NextResponse.json(
+      { error: 'Erreur lors de la récupération des taux de TVA' },
+      { status: 500 }
+    );
+  }
+}
+
+// POST /api/settings/vat-rates - Create VAT rate
+export async function POST(req: Request) {
+  try {
+    const session = await auth();
+
+    if (!session?.user) {
+      return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
+    }
+
+    const tenantId = await getCurrentTenantId();
+
+    if (!tenantId) {
+      return NextResponse.json({ error: 'Tenant non trouvé' }, { status: 404 });
+    }
+
+    const body = await req.json();
+    const data = vatRateSchema.parse(body);
+
+    // If this is set as default, unset other defaults
+    if (data.is_default) {
+      await prisma.vatRate.updateMany({
+        where: {
+          tenant_id: tenantId,
+          is_default: true,
+        },
+        data: {
+          is_default: false,
+        },
+      });
+    }
+
+    const rate = await prisma.vatRate.create({
+      data: {
+        ...data,
+        tenant_id: tenantId,
+      },
+    });
+
+    return NextResponse.json(rate, { status: 201 });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json({ error: error.errors }, { status: 400 });
+    }
+
+    console.error('Error creating VAT rate:', error);
+    return NextResponse.json(
+      { error: 'Erreur lors de la création du taux de TVA' },
+      { status: 500 }
+    );
+  }
+}

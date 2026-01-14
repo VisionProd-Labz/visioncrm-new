@@ -22,6 +22,8 @@ import {
 } from '@/components/ui/dialog';
 import { useLanguage } from '@/contexts/language-context';
 import { useRouter } from 'next/navigation';
+import { ContactModal } from '@/components/contacts/contact-modal';
+import { KryptonButton } from '@/components/ui/krypton';
 
 interface Contact {
   id: string;
@@ -53,12 +55,10 @@ export default function ContactsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [filter, setFilter] = useState<'all' | 'vip' | 'with_vehicles' | 'with_quotes' | 'with_invoices'>('all');
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [showViewModal, setShowViewModal] = useState(false);
+  const [showContactModal, setShowContactModal] = useState(false);
+  const [contactModalMode, setContactModalMode] = useState<'create' | 'view' | 'edit'>('create');
   const [showImportModal, setShowImportModal] = useState(false);
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
-  const [isEditing, setIsEditing] = useState(false);
-  const [contactType, setContactType] = useState<'individual' | 'company'>('individual');
   const [isSaving, setIsSaving] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [importStep, setImportStep] = useState<'upload' | 'mapping' | 'preview'>('upload');
@@ -66,34 +66,6 @@ export default function ContactsPage() {
   const [csvData, setCsvData] = useState<any[]>([]);
   const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
   const [fieldMapping, setFieldMapping] = useState<Record<string, string>>({});
-  const [formData, setFormData] = useState({
-    first_name: '',
-    last_name: '',
-    email: '',
-    phone: '',
-    company: '',
-    address: {
-      street: '',
-      city: '',
-      postalCode: '',
-      country: 'France',
-    },
-    is_vip: false,
-  });
-  const [editData, setEditData] = useState({
-    first_name: '',
-    last_name: '',
-    email: '',
-    phone: '',
-    company: '',
-    address: {
-      street: '',
-      city: '',
-      postalCode: '',
-      country: 'France',
-    },
-    is_vip: false,
-  });
 
   useEffect(() => {
     fetchContacts();
@@ -134,107 +106,53 @@ export default function ContactsPage() {
     }
   };
 
-  const resetForm = () => {
-    setFormData({
-      first_name: '',
-      last_name: '',
-      email: '',
-      phone: '',
-      company: '',
-      address: {
-        street: '',
-        city: '',
-        postalCode: '',
-        country: 'France',
-      },
-      is_vip: false,
-    });
-    setContactType('individual');
-  };
-
-  const handleCreateContact = async () => {
-    if (!formData.first_name || !formData.last_name) {
-      alert('Le prénom et le nom sont requis');
-      return;
-    }
-
-    setIsSaving(true);
-    try {
+  const handleSaveContact = async (data: any) => {
+    if (contactModalMode === 'create') {
       const response = await fetch('/api/contacts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...formData,
-          company: contactType === 'company' ? formData.company : undefined,
-        }),
+        body: JSON.stringify(data),
       });
 
-      if (response.ok) {
-        await fetchContacts();
-        setShowCreateModal(false);
-        resetForm();
-      } else {
+      if (!response.ok) {
         const error = await response.json();
-        alert(error.error || 'Erreur lors de la création du contact');
+        throw new Error(error.error || 'Erreur lors de la création du contact');
       }
-    } catch (error) {
-      console.error('Error creating contact:', error);
-      alert('Erreur lors de la création du contact');
-    } finally {
-      setIsSaving(false);
+
+      await fetchContacts();
+    } else {
+      const response = await fetch(`/api/contacts/${selectedContact?.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Erreur lors de la mise à jour du contact');
+      }
+
+      await fetchContacts();
+      // Update selected contact
+      const updatedContacts = await fetch('/api/contacts');
+      const contactsData = await updatedContacts.json();
+      const updated = contactsData.contacts.find((c: Contact) => c.id === selectedContact?.id);
+      if (updated) {
+        setSelectedContact(updated);
+      }
     }
   };
 
   const handleViewContact = (contact: Contact) => {
     setSelectedContact(contact);
-    setEditData({
-      first_name: contact.first_name,
-      last_name: contact.last_name,
-      email: contact.email || '',
-      phone: contact.phone || '',
-      company: contact.company || '',
-      address: {
-        street: contact.address?.street || '',
-        city: contact.address?.city || '',
-        postalCode: contact.address?.postalCode || '',
-        country: contact.address?.country || 'France',
-      },
-      is_vip: contact.is_vip,
-    });
-    setIsEditing(false);
-    setShowViewModal(true);
+    setContactModalMode('view');
+    setShowContactModal(true);
   };
 
-  const handleUpdateContact = async () => {
-    if (!selectedContact || !editData.first_name || !editData.last_name) {
-      alert('Le prénom et le nom sont requis');
-      return;
-    }
-
-    setIsSaving(true);
-    try {
-      const response = await fetch(`/api/contacts/${selectedContact.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(editData),
-      });
-
-      if (response.ok) {
-        await fetchContacts();
-        setIsEditing(false);
-        // Update selectedContact with new data
-        const updatedContact = { ...selectedContact, ...editData };
-        setSelectedContact(updatedContact);
-      } else {
-        const error = await response.json();
-        alert(error.error || 'Erreur lors de la mise à jour du contact');
-      }
-    } catch (error) {
-      console.error('Error updating contact:', error);
-      alert('Erreur lors de la mise à jour du contact');
-    } finally {
-      setIsSaving(false);
-    }
+  const handleCreateNewContact = () => {
+    setSelectedContact(null);
+    setContactModalMode('create');
+    setShowContactModal(true);
   };
 
   const handleExportContacts = () => {
@@ -498,13 +416,15 @@ export default function ContactsPage() {
             {t('contacts.subtitle')}
           </p>
         </div>
-        <Button
-          onClick={() => setShowCreateModal(true)}
-          className="bg-primary hover:bg-primary/90 text-primary-foreground"
+        <KryptonButton
+          variant="primary"
+          size="md"
+          icon={<Plus className="w-4 h-4" />}
+          iconPosition="left"
+          onClick={handleCreateNewContact}
         >
-          <Plus className="mr-2 h-4 w-4" />
           {t('contacts.new_contact')}
-        </Button>
+        </KryptonButton>
       </div>
 
       {/* Search and Filters */}
@@ -728,478 +648,17 @@ export default function ContactsPage() {
         </div>
       )}
 
-      {/* Create Contact Modal */}
-      <Dialog open={showCreateModal} onOpenChange={(open) => {
-        setShowCreateModal(open);
-        if (!open) resetForm();
-      }}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>{t('contacts.new_contact')}</DialogTitle>
-            <DialogDescription>
-              Créez un nouveau contact particulier ou entreprise
-            </DialogDescription>
-          </DialogHeader>
-
-          {/* Tab Selector */}
-          <div className="flex gap-2 p-1 bg-muted rounded-lg">
-            <button
-              onClick={() => setContactType('individual')}
-              className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
-                contactType === 'individual'
-                  ? 'bg-background text-foreground shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              <User className="h-4 w-4 inline-block mr-2" />
-              Particulier
-            </button>
-            <button
-              onClick={() => setContactType('company')}
-              className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
-                contactType === 'company'
-                  ? 'bg-background text-foreground shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              <Building2 className="h-4 w-4 inline-block mr-2" />
-              Entreprise
-            </button>
-          </div>
-
-          {/* Form */}
-          <div className="space-y-4 mt-4">
-            {/* Company name (only for company type) */}
-            {contactType === 'company' && (
-              <div className="space-y-2">
-                <Label htmlFor="company">Nom de l'entreprise *</Label>
-                <Input
-                  id="company"
-                  value={formData.company}
-                  onChange={(e) => setFormData({ ...formData, company: e.target.value })}
-                  placeholder="ACME Corporation"
-                />
-              </div>
-            )}
-
-            {/* Name fields */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="first_name">Prénom *</Label>
-                <Input
-                  id="first_name"
-                  value={formData.first_name}
-                  onChange={(e) => setFormData({ ...formData, first_name: e.target.value })}
-                  placeholder="Jean"
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="last_name">Nom *</Label>
-                <Input
-                  id="last_name"
-                  value={formData.last_name}
-                  onChange={(e) => setFormData({ ...formData, last_name: e.target.value })}
-                  placeholder="Dupont"
-                  required
-                />
-              </div>
-            </div>
-
-            {/* Contact info */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  placeholder="jean.dupont@example.com"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="phone">Téléphone</Label>
-                <Input
-                  id="phone"
-                  type="tel"
-                  value={formData.phone}
-                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                  placeholder="+33 6 12 34 56 78"
-                />
-              </div>
-            </div>
-
-            {/* Address */}
-            <div className="space-y-2">
-              <Label htmlFor="street">Adresse</Label>
-              <Input
-                id="street"
-                value={formData.address.street}
-                onChange={(e) => setFormData({
-                  ...formData,
-                  address: { ...formData.address, street: e.target.value }
-                })}
-                placeholder="123 Rue de la Paix"
-              />
-            </div>
-
-            <div className="grid grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="postalCode">Code postal</Label>
-                <Input
-                  id="postalCode"
-                  value={formData.address.postalCode}
-                  onChange={(e) => setFormData({
-                    ...formData,
-                    address: { ...formData.address, postalCode: e.target.value }
-                  })}
-                  placeholder="75001"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="city">Ville</Label>
-                <Input
-                  id="city"
-                  value={formData.address.city}
-                  onChange={(e) => setFormData({
-                    ...formData,
-                    address: { ...formData.address, city: e.target.value }
-                  })}
-                  placeholder="Paris"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="country">Pays</Label>
-                <Input
-                  id="country"
-                  value={formData.address.country}
-                  onChange={(e) => setFormData({
-                    ...formData,
-                    address: { ...formData.address, country: e.target.value }
-                  })}
-                  placeholder="France"
-                />
-              </div>
-            </div>
-
-            {/* VIP toggle */}
-            <div className="flex items-center justify-between p-4 border border-border rounded-lg">
-              <div>
-                <Label htmlFor="is_vip" className="text-base font-medium">Contact VIP</Label>
-                <p className="text-sm text-muted-foreground">Marquer ce contact comme prioritaire</p>
-              </div>
-              <Switch
-                id="is_vip"
-                checked={formData.is_vip}
-                onCheckedChange={(checked) => setFormData({ ...formData, is_vip: checked })}
-              />
-            </div>
-          </div>
-
-          {/* Actions */}
-          <div className="flex justify-end gap-2 mt-6 pt-4 border-t">
-            <Button
-              variant="outline"
-              onClick={() => {
-                setShowCreateModal(false);
-                resetForm();
-              }}
-              disabled={isSaving}
-            >
-              Annuler
-            </Button>
-            <Button
-              onClick={handleCreateContact}
-              disabled={isSaving || !formData.first_name || !formData.last_name}
-            >
-              {isSaving ? 'Création...' : 'Créer le contact'}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* View/Edit Contact Modal */}
-      <Dialog open={showViewModal} onOpenChange={setShowViewModal}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <DialogTitle>
-                  {selectedContact?.first_name} {selectedContact?.last_name}
-                </DialogTitle>
-                <DialogDescription>
-                  {selectedContact?.company || 'Contact particulier'}
-                </DialogDescription>
-              </div>
-              {!isEditing && (
-                <Button variant="outline" size="sm" onClick={() => setIsEditing(true)}>
-                  <Edit className="h-4 w-4 mr-2" />
-                  Modifier
-                </Button>
-              )}
-            </div>
-          </DialogHeader>
-
-          <div className="space-y-6 mt-4">
-            {/* Stats Overview */}
-            {!isEditing && (
-              <div className="grid grid-cols-3 gap-4 p-4 bg-muted/50 rounded-lg">
-                <div className="text-center">
-                  <div className="flex items-center justify-center gap-1 text-muted-foreground mb-1">
-                    <Car className="h-4 w-4" />
-                  </div>
-                  <p className="text-2xl font-bold text-foreground">{selectedContact?._count.vehicles || 0}</p>
-                  <p className="text-xs text-muted-foreground">Véhicules</p>
-                </div>
-                <div className="text-center">
-                  <div className="flex items-center justify-center gap-1 text-muted-foreground mb-1">
-                    <FileText className="h-4 w-4" />
-                  </div>
-                  <p className="text-2xl font-bold text-foreground">{selectedContact?._count.quotes || 0}</p>
-                  <p className="text-xs text-muted-foreground">Devis</p>
-                </div>
-                <div className="text-center">
-                  <div className="flex items-center justify-center gap-1 text-muted-foreground mb-1">
-                    <Receipt className="h-4 w-4" />
-                  </div>
-                  <p className="text-2xl font-bold text-foreground">{selectedContact?._count.invoices || 0}</p>
-                  <p className="text-xs text-muted-foreground">Factures</p>
-                </div>
-              </div>
-            )}
-
-            {isEditing ? (
-              /* Edit Mode */
-              <div className="space-y-4">
-                {/* Company name */}
-                {editData.company && (
-                  <div className="space-y-2">
-                    <Label htmlFor="edit_company">Nom de l'entreprise</Label>
-                    <Input
-                      id="edit_company"
-                      value={editData.company}
-                      onChange={(e) => setEditData({ ...editData, company: e.target.value })}
-                      placeholder="ACME Corporation"
-                    />
-                  </div>
-                )}
-
-                {/* Name fields */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="edit_first_name">Prénom *</Label>
-                    <Input
-                      id="edit_first_name"
-                      value={editData.first_name}
-                      onChange={(e) => setEditData({ ...editData, first_name: e.target.value })}
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="edit_last_name">Nom *</Label>
-                    <Input
-                      id="edit_last_name"
-                      value={editData.last_name}
-                      onChange={(e) => setEditData({ ...editData, last_name: e.target.value })}
-                      required
-                    />
-                  </div>
-                </div>
-
-                {/* Contact info */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="edit_email">Email</Label>
-                    <Input
-                      id="edit_email"
-                      type="email"
-                      value={editData.email}
-                      onChange={(e) => setEditData({ ...editData, email: e.target.value })}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="edit_phone">Téléphone</Label>
-                    <Input
-                      id="edit_phone"
-                      type="tel"
-                      value={editData.phone}
-                      onChange={(e) => setEditData({ ...editData, phone: e.target.value })}
-                    />
-                  </div>
-                </div>
-
-                {/* Address */}
-                <div className="space-y-2">
-                  <Label htmlFor="edit_street">Adresse</Label>
-                  <Input
-                    id="edit_street"
-                    value={editData.address.street}
-                    onChange={(e) => setEditData({
-                      ...editData,
-                      address: { ...editData.address, street: e.target.value }
-                    })}
-                  />
-                </div>
-
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="edit_postalCode">Code postal</Label>
-                    <Input
-                      id="edit_postalCode"
-                      value={editData.address.postalCode}
-                      onChange={(e) => setEditData({
-                        ...editData,
-                        address: { ...editData.address, postalCode: e.target.value }
-                      })}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="edit_city">Ville</Label>
-                    <Input
-                      id="edit_city"
-                      value={editData.address.city}
-                      onChange={(e) => setEditData({
-                        ...editData,
-                        address: { ...editData.address, city: e.target.value }
-                      })}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="edit_country">Pays</Label>
-                    <Input
-                      id="edit_country"
-                      value={editData.address.country}
-                      onChange={(e) => setEditData({
-                        ...editData,
-                        address: { ...editData.address, country: e.target.value }
-                      })}
-                    />
-                  </div>
-                </div>
-
-                {/* VIP toggle */}
-                <div className="flex items-center justify-between p-4 border border-border rounded-lg">
-                  <div>
-                    <Label htmlFor="edit_is_vip" className="text-base font-medium">Contact VIP</Label>
-                    <p className="text-sm text-muted-foreground">Marquer ce contact comme prioritaire</p>
-                  </div>
-                  <Switch
-                    id="edit_is_vip"
-                    checked={editData.is_vip}
-                    onCheckedChange={(checked) => setEditData({ ...editData, is_vip: checked })}
-                  />
-                </div>
-              </div>
-            ) : (
-              /* View Mode */
-              <div className="space-y-6">
-                {/* Contact Information */}
-                <div>
-                  <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
-                    Informations de contact
-                  </h3>
-                  <div className="space-y-3">
-                    {selectedContact?.email && (
-                      <div className="flex items-center gap-3">
-                        <Mail className="h-4 w-4 text-muted-foreground" />
-                        <a href={`mailto:${selectedContact.email}`} className="text-sm text-primary hover:underline">
-                          {selectedContact.email}
-                        </a>
-                      </div>
-                    )}
-                    {selectedContact?.phone && (
-                      <div className="flex items-center gap-3">
-                        <Phone className="h-4 w-4 text-muted-foreground" />
-                        <a href={`tel:${selectedContact.phone}`} className="text-sm text-foreground">
-                          {selectedContact.phone}
-                        </a>
-                      </div>
-                    )}
-                    {selectedContact?.company && (
-                      <div className="flex items-center gap-3">
-                        <Building2 className="h-4 w-4 text-muted-foreground" />
-                        <span className="text-sm text-foreground">{selectedContact.company}</span>
-                      </div>
-                    )}
-                    {selectedContact?.is_vip && (
-                      <div className="inline-flex items-center gap-2 px-3 py-1 bg-amber-500/10 text-amber-600 dark:text-amber-500 rounded-full">
-                        <Star className="h-4 w-4 fill-current" />
-                        <span className="text-sm font-medium">Contact VIP</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Address */}
-                {selectedContact?.address && (selectedContact.address.street || selectedContact.address.city) && (
-                  <div>
-                    <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
-                      Adresse
-                    </h3>
-                    <div className="flex items-start gap-3">
-                      <Building2 className="h-4 w-4 text-muted-foreground mt-0.5" />
-                      <div className="text-sm text-foreground">
-                        {selectedContact.address.street && <p>{selectedContact.address.street}</p>}
-                        {(selectedContact.address.postalCode || selectedContact.address.city) && (
-                          <p>
-                            {selectedContact.address.postalCode} {selectedContact.address.city}
-                          </p>
-                        )}
-                        {selectedContact.address.country && <p>{selectedContact.address.country}</p>}
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Actions */}
-          <div className="flex justify-end gap-2 mt-6 pt-4 border-t">
-            {isEditing ? (
-              <>
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setIsEditing(false);
-                    // Reset edit data
-                    if (selectedContact) {
-                      setEditData({
-                        first_name: selectedContact.first_name,
-                        last_name: selectedContact.last_name,
-                        email: selectedContact.email || '',
-                        phone: selectedContact.phone || '',
-                        company: selectedContact.company || '',
-                        address: {
-                          street: selectedContact.address?.street || '',
-                          city: selectedContact.address?.city || '',
-                          postalCode: selectedContact.address?.postalCode || '',
-                          country: selectedContact.address?.country || 'France',
-                        },
-                        is_vip: selectedContact.is_vip,
-                      });
-                    }
-                  }}
-                  disabled={isSaving}
-                >
-                  Annuler
-                </Button>
-                <Button
-                  onClick={handleUpdateContact}
-                  disabled={isSaving || !editData.first_name || !editData.last_name}
-                >
-                  {isSaving ? 'Enregistrement...' : 'Enregistrer'}
-                </Button>
-              </>
-            ) : (
-              <Button variant="outline" onClick={() => setShowViewModal(false)}>
-                Fermer
-              </Button>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
+      {/* Contact Modal */}
+      <ContactModal
+        isOpen={showContactModal}
+        onClose={() => {
+          setShowContactModal(false);
+          setSelectedContact(null);
+        }}
+        contact={selectedContact}
+        mode={contactModalMode}
+        onSave={handleSaveContact}
+      />
 
       {/* Import CSV Modal */}
       <Dialog open={showImportModal} onOpenChange={(open) => {

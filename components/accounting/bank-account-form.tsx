@@ -47,8 +47,8 @@ export function BankAccountForm({ initialData, isEditing = false }: BankAccountF
     formState: { errors },
     setValue,
     watch,
-  } = useForm<BankAccountFormData>({
-    resolver: zodResolver(bankAccountSchema),
+  } = useForm({
+    resolver: zodResolver(bankAccountSchema) as any,
     defaultValues: {
       account_name: initialData?.account_name || '',
       account_number: initialData?.account_number || '',
@@ -66,7 +66,7 @@ export function BankAccountForm({ initialData, isEditing = false }: BankAccountF
   const accountType = watch('account_type');
   const currency = watch('currency');
 
-  const onSubmit = async (data: BankAccountFormData) => {
+  const onSubmit = async (data: any) => {
     setIsLoading(true);
     try {
       const url = isEditing && initialData?.id

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getCurrentTenantId } from '@/lib/tenant';
+import { getCurrentTenantId, requireTenantId } from '@/lib/tenant';
 import { z } from 'zod';
 
 const companySchema = z.object({
@@ -18,7 +18,7 @@ const companySchema = z.object({
  */
 export async function GET(req: Request) {
   try {
-    const tenantId = await getCurrentTenantId();
+    const tenantId = await requireTenantId();
 
     const tenant = await prisma.tenant.findUnique({
       where: { id: tenantId },
@@ -57,7 +57,7 @@ export async function GET(req: Request) {
  */
 export async function PATCH(req: Request) {
   try {
-    const tenantId = await getCurrentTenantId();
+    const tenantId = await requireTenantId();
     const body = await req.json();
 
     // Validate input

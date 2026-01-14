@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getCurrentTenantId } from '@/lib/tenant';
+import { getCurrentTenantId, requireTenantId } from '@/lib/tenant';
 import { taskSchema } from '@/lib/validations';
 import { z } from 'zod';
 
@@ -10,7 +10,7 @@ import { z } from 'zod';
  */
 export async function GET(req: Request) {
   try {
-    const tenantId = await getCurrentTenantId();
+    const tenantId = await requireTenantId();
     const { searchParams } = new URL(req.url);
 
     const status = searchParams.get('status');
@@ -75,7 +75,7 @@ export async function GET(req: Request) {
  */
 export async function POST(req: Request) {
   try {
-    const tenantId = await getCurrentTenantId();
+    const tenantId = await requireTenantId();
     const body = await req.json();
 
     // Validate input

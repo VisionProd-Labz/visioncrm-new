@@ -70,8 +70,8 @@ export function ExpenseForm({ initialData, isEditing = false }: ExpenseFormProps
     formState: { errors },
     setValue,
     watch,
-  } = useForm<ExpenseFormData>({
-    resolver: zodResolver(expenseSchema),
+  } = useForm({
+    resolver: zodResolver(expenseSchema) as any,
     defaultValues: {
       date: initialData?.date ? new Date(initialData.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
       vendor_id: initialData?.vendor_id || undefined,
@@ -104,7 +104,7 @@ export function ExpenseForm({ initialData, isEditing = false }: ExpenseFormProps
     });
   }, [amountHt, vatRate]);
 
-  const onSubmit = async (data: ExpenseFormData) => {
+  const onSubmit = async (data: any) => {
     setIsLoading(true);
     try {
       const url = isEditing && initialData?.id
@@ -385,7 +385,7 @@ export function ExpenseForm({ initialData, isEditing = false }: ExpenseFormProps
           type="submit"
           variant="secondary"
           disabled={isLoading}
-          onClick={() => setValue('status', 'DRAFT')}
+          onClick={() => (setValue as any)('status', 'DRAFT')}
         >
           {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
           Enregistrer comme brouillon

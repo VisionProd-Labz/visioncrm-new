@@ -1,18 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { requireTenantId } from '@/lib/tenant';
+import { auth } from '@/auth';
 import { prisma } from '@/lib/prisma';
 import { legalDocumentSchema } from '@/lib/accounting/validations';
 import { z } from 'zod';
 
-// Utility function to get current tenant ID
-async function getCurrentTenantId(): Promise<string> {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.tenantId) {
-    throw new Error('No tenant ID found in session');
-  }
-  return session.user.tenantId;
-}
 
 /**
  * GET /api/accounting/documents/legal
@@ -20,7 +12,7 @@ async function getCurrentTenantId(): Promise<string> {
  */
 export async function GET(req: NextRequest) {
   try {
-    const tenantId = await getCurrentTenantId();
+    const tenantId = await requireTenantId();
     const { searchParams } = new URL(req.url);
 
     const year = searchParams.get('year');
@@ -31,12 +23,20 @@ export async function GET(req: NextRequest) {
       deleted_at: null,
     };
 
-    if (year) where.year = parseInt(year);
+    if (year) {
+      // Filter by year using issue_date
+      const yearStart = new Date(`${year}-01-01`);
+      const yearEnd = new Date(`${year}-12-31`);
+      where.issue_date = {
+        gte: yearStart,
+        lte: yearEnd,
+      };
+    }
     if (type) where.type = type;
 
     const documents = await prisma.legalDocument.findMany({
       where,
-      orderBy: [{ year: 'desc' }, { document_date: 'desc' }],
+      orderBy: [{ issue_date: 'desc' }, { created_at: 'desc' }],
     });
 
     return NextResponse.json({ documents });
@@ -55,19 +55,20 @@ export async function GET(req: NextRequest) {
  */
 export async function POST(req: NextRequest) {
   try {
-    const tenantId = await getCurrentTenantId();
-    const session = await getServerSession(authOptions);
+    const tenantId = await requireTenantId();
+    const session = await auth();
     const body = await req.json();
 
     // Validate request body
     const data = legalDocumentSchema.parse(body);
 
     // Create document
+    const { metadata, ...rest } = data;
     const document = await prisma.legalDocument.create({
       data: {
-        ...data,
+        ...rest,
         tenant_id: tenantId,
-        uploaded_by: session?.user?.id || null,
+        ...(metadata && { metadata }),
       },
     });
 

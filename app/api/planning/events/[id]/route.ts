@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getCurrentTenantId } from '@/lib/tenant';
+import { getCurrentTenantId, requireTenantId } from '@/lib/tenant';
 import { z } from 'zod';
 
 const updateSchema = z.object({
@@ -28,7 +28,7 @@ export async function GET(
   const { id } = await params;
 
   try {
-    const tenantId = await getCurrentTenantId();
+    const tenantId = await requireTenantId();
 
     const event = await prisma.event.findFirst({
       where: {
@@ -66,7 +66,7 @@ export async function PATCH(
   const { id } = await params;
 
   try {
-    const tenantId = await getCurrentTenantId();
+    const tenantId = await requireTenantId();
     const body = await req.json();
 
     // Validate input
@@ -131,7 +131,7 @@ export async function DELETE(
   const { id } = await params;
 
   try {
-    const tenantId = await getCurrentTenantId();
+    const tenantId = await requireTenantId();
 
     // Check event exists
     const existing = await prisma.event.findFirst({

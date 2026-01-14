@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getCurrentTenantId } from '@/lib/tenant';
+import { getCurrentTenantId, requireTenantId } from '@/lib/tenant';
 
 /**
  * GET /api/users
@@ -8,7 +8,7 @@ import { getCurrentTenantId } from '@/lib/tenant';
  */
 export async function GET(req: Request) {
   try {
-    const tenantId = await getCurrentTenantId();
+    const tenantId = await requireTenantId();
 
     const users = await prisma.user.findMany({
       where: {

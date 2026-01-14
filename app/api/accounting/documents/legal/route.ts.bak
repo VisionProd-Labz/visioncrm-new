@@ -1,0 +1,97 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { auth } from '@/auth';
+import { prisma } from '@/lib/prisma';
+import { legalDocumentSchema } from '@/lib/accounting/validations';
+import { z } from 'zod';
+
+// Utility function to get current tenant ID
+async function getCurrentTenantId(): Promise<string> {
+  const session = await auth();
+  if (!session || !(session.user as any).tenantId) {
+    throw new Error('No tenant ID found in session');
+  }
+  return (session.user as any).tenantId;
+}
+
+/**
+ * GET /api/accounting/documents/legal
+ * List all legal documents for the current tenant
+ */
+export async function GET(req: NextRequest) {
+  try {
+    const tenantId = await getCurrentTenantId();
+    const { searchParams } = new URL(req.url);
+
+    const year = searchParams.get('year');
+    const type = searchParams.get('type');
+
+    const where: any = {
+      tenant_id: tenantId,
+      deleted_at: null,
+    };
+
+    if (year) {
+      // Filter by year using issue_date
+      const yearStart = new Date(`${year}-01-01`);
+      const yearEnd = new Date(`${year}-12-31`);
+      where.issue_date = {
+        gte: yearStart,
+        lte: yearEnd,
+      };
+    }
+    if (type) where.type = type;
+
+    const documents = await prisma.legalDocument.findMany({
+      where,
+      orderBy: [{ issue_date: 'desc' }, { created_at: 'desc' }],
+    });
+
+    return NextResponse.json({ documents });
+  } catch (error) {
+    console.error('Error fetching legal documents:', error);
+    return NextResponse.json(
+      { error: 'Une erreur est survenue lors de la récupération des documents juridiques' },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * POST /api/accounting/documents/legal
+ * Create a new legal document
+ */
+export async function POST(req: NextRequest) {
+  try {
+    const tenantId = await getCurrentTenantId();
+    const session = await auth();
+    const body = await req.json();
+
+    // Validate request body
+    const data = legalDocumentSchema.parse(body);
+
+    // Create document
+    const { metadata, ...rest } = data;
+    const document = await prisma.legalDocument.create({
+      data: {
+        ...rest,
+        tenant_id: tenantId,
+        ...(metadata && { metadata }),
+      },
+    });
+
+    return NextResponse.json(document, { status: 201 });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: 'Données invalides', details: error.errors },
+        { status: 400 }
+      );
+    }
+
+    console.error('Error creating legal document:', error);
+    return NextResponse.json(
+      { error: 'Une erreur est survenue lors de la création du document' },
+      { status: 500 }
+    );
+  }
+}

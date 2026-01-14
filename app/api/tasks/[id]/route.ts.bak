@@ -1,0 +1,189 @@
+import { NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
+import { getCurrentTenantId } from '@/lib/tenant';
+import { z } from 'zod';
+
+/**
+ * GET /api/tasks/:id
+ * Get a single task
+ */
+export async function GET(
+  req: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+
+  try {
+    const tenantId = await getCurrentTenantId();
+
+    const task = await prisma.task.findFirst({
+      where: {
+        id: id,
+        tenant_id: tenantId,
+        deleted_at: null,
+      },
+      include: {
+        assignee: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+        contact: {
+          select: {
+            id: true,
+            first_name: true,
+            last_name: true,
+            email: true,
+            phone: true,
+            company: true,
+          },
+        },
+      },
+    });
+
+    if (!task) {
+      return NextResponse.json(
+        { error: 'Tâche non trouvée' },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json(task);
+  } catch (error) {
+    console.error('Get task error:', error);
+    return NextResponse.json(
+      { error: 'Erreur lors de la récupération de la tâche' },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * PATCH /api/tasks/:id
+ * Update a task
+ */
+export async function PATCH(
+  req: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+
+  try {
+    const tenantId = await getCurrentTenantId();
+    const body = await req.json();
+
+    // Check task exists
+    const existing = await prisma.task.findFirst({
+      where: {
+        id: id,
+        tenant_id: tenantId,
+        deleted_at: null,
+      },
+    });
+
+    if (!existing) {
+      return NextResponse.json(
+        { error: 'Tâche non trouvée' },
+        { status: 404 }
+      );
+    }
+
+    // Update task
+    const updateData: any = {};
+
+    if (body.title !== undefined) updateData.title = body.title;
+    if (body.description !== undefined) updateData.description = body.description;
+    if (body.assignee_id !== undefined) updateData.assignee_id = body.assignee_id || null;
+    if (body.contact_id !== undefined) updateData.contact_id = body.contact_id || null;
+    if (body.due_date !== undefined) updateData.due_date = body.due_date ? new Date(body.due_date) : null;
+    if (body.status !== undefined) updateData.status = body.status;
+    if (body.priority !== undefined) updateData.priority = body.priority;
+
+    // Mark as completed if status is DONE
+    if (body.status === 'DONE' && !existing.completed_at) {
+      updateData.completed_at = new Date();
+    }
+
+    // Remove completed_at if status is not DONE
+    if (body.status && body.status !== 'DONE') {
+      updateData.completed_at = null;
+    }
+
+    const task = await prisma.task.update({
+      where: { id: id },
+      data: updateData,
+      include: {
+        assignee: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+        contact: {
+          select: {
+            id: true,
+            first_name: true,
+            last_name: true,
+            company: true,
+          },
+        },
+      },
+    });
+
+    return NextResponse.json(task);
+  } catch (error) {
+    console.error('Update task error:', error);
+    return NextResponse.json(
+      { error: 'Erreur lors de la mise à jour de la tâche' },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * DELETE /api/tasks/:id
+ * Soft delete a task
+ */
+export async function DELETE(
+  req: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+
+  try {
+    const tenantId = await getCurrentTenantId();
+
+    // Check task exists
+    const existing = await prisma.task.findFirst({
+      where: {
+        id: id,
+        tenant_id: tenantId,
+        deleted_at: null,
+      },
+    });
+
+    if (!existing) {
+      return NextResponse.json(
+        { error: 'Tâche non trouvée' },
+        { status: 404 }
+      );
+    }
+
+    // Soft delete
+    await prisma.task.update({
+      where: { id: id },
+      data: { deleted_at: new Date() },
+    });
+
+    return NextResponse.json({ message: 'Tâche supprimée' });
+  } catch (error) {
+    console.error('Delete task error:', error);
+    return NextResponse.json(
+      { error: 'Erreur lors de la suppression de la tâche' },
+      { status: 500 }
+    );
+  }
+}

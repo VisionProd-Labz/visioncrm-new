@@ -1,7 +1,6 @@
 'use client';
 
 import React from 'react';
-import * as Sentry from '@sentry/nextjs';
 import { Button } from '@/components/ui/button';
 import { AlertTriangle } from 'lucide-react';
 
@@ -29,16 +28,10 @@ export class ErrorBoundary extends React.Component<
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-    // Log error to Sentry
-    Sentry.captureException(error, {
-      contexts: {
-        react: {
-          componentStack: errorInfo.componentStack,
-        },
-      },
+    // Log error to console (Sentry disabled)
+    console.error('Error caught by boundary:', error, {
+      componentStack: errorInfo.componentStack,
     });
-
-    console.error('Error caught by boundary:', error, errorInfo);
   }
 
   render() {
@@ -108,8 +101,7 @@ export class ErrorBoundary extends React.Component<
 // Hook to manually capture errors
 export function useErrorHandler() {
   return React.useCallback((error: Error, errorInfo?: any) => {
-    Sentry.captureException(error, {
-      contexts: errorInfo ? { extra: errorInfo } : undefined,
-    });
+    // Log error to console (Sentry disabled)
+    console.error('Error captured manually:', error, errorInfo);
   }, []);
 }

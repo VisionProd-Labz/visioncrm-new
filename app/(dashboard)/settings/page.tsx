@@ -212,6 +212,90 @@ export default function SettingsPage() {
                     </div>
                   </div>
 
+                  {/* Primary Color Selector */}
+                  <div className="bg-muted/50 border border-border rounded-lg p-6">
+                    <div className="space-y-4">
+                      <div className="space-y-1">
+                        <h3 className="text-base font-semibold text-foreground">
+                          Couleur primaire
+                        </h3>
+                        <p className="text-sm text-muted-foreground">
+                          Personnalisez la couleur principale de l'interface
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-4">
+                        <div className="space-y-2 flex-1">
+                          <Label htmlFor="primaryColor">Couleur</Label>
+                          <div className="flex items-center gap-3">
+                            <input
+                              type="color"
+                              id="primaryColor"
+                              defaultValue="#3b82f6"
+                              className="h-12 w-24 rounded-lg cursor-pointer border-2 border-border"
+                              onChange={(e) => {
+                                // Update CSS variable
+                                document.documentElement.style.setProperty('--primary', e.target.value);
+                                // Save to localStorage
+                                localStorage.setItem('primaryColor', e.target.value);
+                              }}
+                            />
+                            <div className="flex-1">
+                              <Input
+                                id="primaryColorHex"
+                                defaultValue="#3b82f6"
+                                placeholder="#3b82f6"
+                                className="font-mono"
+                                onChange={(e) => {
+                                  const color = e.target.value;
+                                  if (/^#[0-9A-F]{6}$/i.test(color)) {
+                                    document.documentElement.style.setProperty('--primary', color);
+                                    localStorage.setItem('primaryColor', color);
+                                    const colorInput = document.getElementById('primaryColor') as HTMLInputElement;
+                                    if (colorInput) colorInput.value = color;
+                                  }
+                                }}
+                              />
+                            </div>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                const defaultColor = '#3b82f6';
+                                document.documentElement.style.setProperty('--primary', defaultColor);
+                                localStorage.setItem('primaryColor', defaultColor);
+                                const colorInput = document.getElementById('primaryColor') as HTMLInputElement;
+                                const hexInput = document.getElementById('primaryColorHex') as HTMLInputElement;
+                                if (colorInput) colorInput.value = defaultColor;
+                                if (hexInput) hexInput.value = defaultColor;
+                              }}
+                            >
+                              Réinitialiser
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-5 gap-2">
+                        {['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981'].map((color) => (
+                          <button
+                            key={color}
+                            className="h-10 rounded-lg border-2 border-border hover:border-foreground transition-colors"
+                            style={{ backgroundColor: color }}
+                            onClick={() => {
+                              document.documentElement.style.setProperty('--primary', color);
+                              localStorage.setItem('primaryColor', color);
+                              const colorInput = document.getElementById('primaryColor') as HTMLInputElement;
+                              const hexInput = document.getElementById('primaryColorHex') as HTMLInputElement;
+                              if (colorInput) colorInput.value = color;
+                              if (hexInput) hexInput.value = color;
+                            }}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
                   {/* Color Scheme Preview */}
                   <div className="space-y-3">
                     <Label>{t('settings.appearance.color_preview')}</Label>

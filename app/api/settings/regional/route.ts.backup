@@ -1,0 +1,99 @@
+import { NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
+import { prisma } from '@/lib/prisma';
+import { getCurrentTenantId } from '@/lib/tenant';
+import { z } from 'zod';
+
+const regionalSettingsSchema = z.object({
+  date_format: z.string().optional(),
+  number_format: z.object({
+    decimal_separator: z.string(),
+    thousand_separator: z.string(),
+    decimals: z.number().int().min(0).max(4),
+  }).optional(),
+  currency_display: z.enum(['before', 'after']).optional(),
+  phone_clickable: z.boolean().optional(),
+});
+
+// GET /api/settings/regional
+export async function GET(req: Request) {
+  try {
+    const session = await getServerSession(authOptions);
+
+    if (!session?.user) {
+      return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
+    }
+
+    const tenantId = await getCurrentTenantId();
+
+    if (!tenantId) {
+      return NextResponse.json({ error: 'Tenant non trouvé' }, { status: 404 });
+    }
+
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: {
+        date_format: true,
+        number_format: true,
+        currency_display: true,
+        phone_clickable: true,
+      },
+    });
+
+    if (!tenant) {
+      return NextResponse.json({ error: 'Tenant non trouvé' }, { status: 404 });
+    }
+
+    return NextResponse.json({ settings: tenant });
+  } catch (error) {
+    console.error('Error fetching regional settings:', error);
+    return NextResponse.json(
+      { error: 'Erreur lors de la récupération des paramètres régionaux' },
+      { status: 500 }
+    );
+  }
+}
+
+// PATCH /api/settings/regional
+export async function PATCH(req: Request) {
+  try {
+    const session = await getServerSession(authOptions);
+
+    if (!session?.user) {
+      return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
+    }
+
+    const tenantId = await getCurrentTenantId();
+
+    if (!tenantId) {
+      return NextResponse.json({ error: 'Tenant non trouvé' }, { status: 404 });
+    }
+
+    const body = await req.json();
+    const data = regionalSettingsSchema.parse(body);
+
+    const tenant = await prisma.tenant.update({
+      where: { id: tenantId },
+      data,
+      select: {
+        date_format: true,
+        number_format: true,
+        currency_display: true,
+        phone_clickable: true,
+      },
+    });
+
+    return NextResponse.json({ settings: tenant });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json({ error: error.errors }, { status: 400 });
+    }
+
+    console.error('Error updating regional settings:', error);
+    return NextResponse.json(
+      { error: 'Erreur lors de la mise à jour des paramètres régionaux' },
+      { status: 500 }
+    );
+  }
+}

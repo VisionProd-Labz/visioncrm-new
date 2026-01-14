@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getCurrentTenantId } from '@/lib/tenant';
+import { getCurrentTenantId, requireTenantId } from '@/lib/tenant';
 import { contactSchema } from '@/lib/validations';
 import { z } from 'zod';
 
@@ -10,7 +10,10 @@ import { z } from 'zod';
  */
 export async function GET(req: Request) {
   try {
-    const tenantId = await getCurrentTenantId();
+    const tenantId = await requireTenantId();
+    if (!tenantId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
     const { searchParams } = new URL(req.url);
 
     const page = parseInt(searchParams.get('page') || '1');
@@ -84,7 +87,10 @@ export async function GET(req: Request) {
  */
 export async function POST(req: Request) {
   try {
-    const tenantId = await getCurrentTenantId();
+    const tenantId = await requireTenantId();
+    if (!tenantId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
     const body = await req.json();
 
     // Validate input

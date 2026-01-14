@@ -1,0 +1,96 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { auth } from '@/auth';
+import { prisma } from '@/lib/prisma';
+import { litigationSchema } from '@/lib/accounting/validations';
+import { z } from 'zod';
+
+// Utility function to get current tenant ID
+async function getCurrentTenantId(): Promise<string> {
+  const session = await auth();
+  if (!session || !(session.user as any).tenantId) {
+    throw new Error('No tenant ID found in session');
+  }
+  return (session.user as any).tenantId;
+}
+
+/**
+ * GET /api/accounting/litigation
+ * List all litigation cases for the current tenant
+ */
+export async function GET(req: NextRequest) {
+  try {
+    const tenantId = await getCurrentTenantId();
+    const { searchParams } = new URL(req.url);
+
+    const status = searchParams.get('status');
+    const type = searchParams.get('type');
+
+    const where: any = {
+      tenant_id: tenantId,
+      deleted_at: null,
+    };
+
+    if (status) where.status = status;
+    if (type) where.type = type;
+
+    const cases = await prisma.litigation.findMany({
+      where,
+      orderBy: { created_at: 'desc' },
+    });
+
+    // Calculate stats
+    const stats = {
+      totalCases: cases.length,
+      activeCases: cases.filter(c => c.status === 'ONGOING').length,
+      settledCases: cases.filter(c => c.status === 'SETTLED' || c.status === 'WON' || c.status === 'CLOSED').length,
+      totalAmountDisputed: cases.reduce((sum, c) => sum + Number(c.amount_disputed || 0), 0),
+    };
+
+    return NextResponse.json({ cases, stats });
+  } catch (error) {
+    console.error('Error fetching litigation cases:', error);
+    return NextResponse.json(
+      { error: 'Une erreur est survenue lors de la récupération des litiges' },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * POST /api/accounting/litigation
+ * Create a new litigation case
+ */
+export async function POST(req: NextRequest) {
+  try {
+    const tenantId = await getCurrentTenantId();
+    const body = await req.json();
+
+    // Validate request body
+    const data = litigationSchema.parse(body);
+
+    // Create litigation case
+    const { metadata, ...rest } = data;
+    const litigationCase = await prisma.litigation.create({
+      data: {
+        ...rest,
+        tenant_id: tenantId,
+        ...(metadata && { metadata }),
+      },
+    });
+
+    return NextResponse.json(litigationCase, { status: 201 });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: 'Données invalides', details: error.errors },
+        { status: 400 }
+      );
+    }
+
+    console.error('Error creating litigation case:', error);
+    return NextResponse.json(
+      { error: 'Une erreur est survenue lors de la création du litige' },
+      { status: 500 }
+    );
+  }
+}

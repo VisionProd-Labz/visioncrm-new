@@ -1,48 +1,37 @@
-// This file configures Sentry initialization for the server and edge runtimes.
-// https://docs.sentry.io/platforms/javascript/guides/nextjs/
+// This file configures instrumentation for the server and edge runtimes.
+// Sentry has been temporarily disabled - uncomment below and install @sentry/nextjs to re-enable
 
-import * as Sentry from '@sentry/nextjs';
-
-// Export request error handler for error tracking from nested React Server Components
-export const onRequestError = Sentry.captureRequestError;
+// Export no-op request error handler for now
+export const onRequestError = (error: unknown) => {
+  console.error('Request error:', error);
+};
 
 export async function register() {
   if (process.env.NEXT_RUNTIME === 'nodejs') {
     // Server-side initialization
-    const Sentry = await import('@sentry/nextjs');
+    console.log('Server runtime initialized');
 
-    Sentry.init({
-      dsn: process.env.SENTRY_DSN,
-
-      // Adjust this value in production, or use tracesSampler for greater control
-      tracesSampleRate: 1.0,
-
-      // Setting this option to true will print useful information to the console while you're setting up Sentry.
-      debug: false,
-
-      // Configure environment
-      environment: process.env.NODE_ENV,
-
-      // Uncomment the line below to enable Spotlight in development
-      // spotlight: process.env.NODE_ENV === 'development',
-    });
+    // Uncomment below when @sentry/nextjs is installed:
+    // const Sentry = await import('@sentry/nextjs');
+    // Sentry.init({
+    //   dsn: process.env.SENTRY_DSN,
+    //   tracesSampleRate: 1.0,
+    //   debug: false,
+    //   environment: process.env.NODE_ENV,
+    // });
   }
 
   if (process.env.NEXT_RUNTIME === 'edge') {
     // Edge runtime initialization
-    const Sentry = await import('@sentry/nextjs');
+    console.log('Edge runtime initialized');
 
-    Sentry.init({
-      dsn: process.env.SENTRY_DSN,
-
-      // Adjust this value in production, or use tracesSampler for greater control
-      tracesSampleRate: 1.0,
-
-      // Setting this option to true will print useful information to the console while you're setting up Sentry.
-      debug: false,
-
-      // Configure environment
-      environment: process.env.NODE_ENV,
-    });
+    // Uncomment below when @sentry/nextjs is installed:
+    // const Sentry = await import('@sentry/nextjs');
+    // Sentry.init({
+    //   dsn: process.env.SENTRY_DSN,
+    //   tracesSampleRate: 1.0,
+    //   debug: false,
+    //   environment: process.env.NODE_ENV,
+    // });
   }
 }

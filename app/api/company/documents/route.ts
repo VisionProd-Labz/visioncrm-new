@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getCurrentTenantId } from '@/lib/tenant';
+import { getCurrentTenantId, requireTenantId } from '@/lib/tenant';
 import { z } from 'zod';
 
 const documentSchema = z.object({
@@ -18,7 +18,7 @@ const documentSchema = z.object({
  */
 export async function GET(req: Request) {
   try {
-    const tenantId = await getCurrentTenantId();
+    const tenantId = await requireTenantId();
     const { searchParams } = new URL(req.url);
 
     const category = searchParams.get('category');
@@ -55,7 +55,7 @@ export async function GET(req: Request) {
  */
 export async function POST(req: Request) {
   try {
-    const tenantId = await getCurrentTenantId();
+    const tenantId = await requireTenantId();
     const body = await req.json();
 
     // Validate input

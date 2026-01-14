@@ -69,3 +69,6 @@ client_secret*.json
 fix-schema*.sql
 supabase*.sql
 update-demo-password.sql
+
+.vercel
+.env*.local

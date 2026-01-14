@@ -1,8 +1,7 @@
 import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { auth } from '@/auth';
 import { prisma } from '@/lib/prisma';
-import { getCurrentTenantId } from '@/lib/tenant';
+import { getCurrentTenantId, requireTenantId } from '@/lib/tenant';
 import { z } from 'zod';
 
 const vatRateUpdateSchema = z.object({
@@ -19,13 +18,13 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await getServerSession(authOptions);
+    const session = await auth();
 
     if (!session?.user) {
       return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
     }
 
-    const tenantId = await getCurrentTenantId();
+    const tenantId = await requireTenantId();
 
     if (!tenantId) {
       return NextResponse.json({ error: 'Tenant non trouvé' }, { status: 404 });
@@ -87,13 +86,13 @@ export async function DELETE(
   const { id } = await params;
 
   try {
-    const session = await getServerSession(authOptions);
+    const session = await auth();
 
     if (!session?.user) {
       return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
     }
 
-    const tenantId = await getCurrentTenantId();
+    const tenantId = await requireTenantId();
 
     if (!tenantId) {
       return NextResponse.json({ error: 'Tenant non trouvé' }, { status: 404 });

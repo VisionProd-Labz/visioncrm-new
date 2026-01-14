@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getCurrentTenantId } from '@/lib/tenant';
+import { getCurrentTenantId, requireTenantId } from '@/lib/tenant';
 
 /**
  * DELETE /api/company/documents/[id]
@@ -13,7 +13,7 @@ export async function DELETE(
   const { id } = await params;
 
   try {
-    const tenantId = await getCurrentTenantId();
+    const tenantId = await requireTenantId();
 
     // Check document exists
     const existing = await prisma.document.findFirst({

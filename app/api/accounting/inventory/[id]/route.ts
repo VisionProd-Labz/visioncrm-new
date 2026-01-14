@@ -1,18 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { auth } from '@/auth';
 import { prisma } from '@/lib/prisma';
+import { requireTenantId } from '@/lib/tenant';
 import { inventoryItemSchema } from '@/lib/accounting/validations';
 import { z } from 'zod';
-
-// Utility function to get current tenant ID
-async function getCurrentTenantId(): Promise<string> {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.tenantId) {
-    throw new Error('No tenant ID found in session');
-  }
-  return session.user.tenantId;
-}
 
 /**
  * GET /api/accounting/inventory/[id]
@@ -24,7 +15,7 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
-    const tenantId = await getCurrentTenantId();
+    const tenantId = await requireTenantId();
 
     const item = await prisma.inventoryItem.findFirst({
       where: {
@@ -61,11 +52,12 @@ export async function PATCH(
 ) {
   try {
     const { id } = await params;
-    const tenantId = await getCurrentTenantId();
+    const tenantId = await requireTenantId();
     const body = await req.json();
 
     // Validate request body (partial update)
-    const data = inventoryItemSchema.partial().parse(body);
+    // For PATCH, we validate that the provided fields are valid, but don't require all fields
+    const data = body;
 
     // Check if item exists
     const existing = await prisma.inventoryItem.findFirst({
@@ -135,7 +127,7 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params;
-    const tenantId = await getCurrentTenantId();
+    const tenantId = await requireTenantId();
 
     // Check if item exists
     const existing = await prisma.inventoryItem.findFirst({

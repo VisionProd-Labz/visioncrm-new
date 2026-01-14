@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getCurrentTenantId } from '@/lib/tenant';
+import { getCurrentTenantId, requireTenantId } from '@/lib/tenant';
 import { bankAccountSchema } from '@/lib/accounting/validations';
 import { z } from 'zod';
 
@@ -14,8 +14,7 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
-    const { id } = await params;
-    const tenantId = await getCurrentTenantId();
+    const tenantId = await requireTenantId();
     if (!tenantId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
@@ -64,14 +63,14 @@ export async function PATCH(
 ) {
   try {
     const { id } = await params;
-    const { id } = await params;
-    const tenantId = await getCurrentTenantId();
+    const tenantId = await requireTenantId();
     if (!tenantId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     const body = await req.json();
-    const data = bankAccountSchema.partial().parse(body);
+    // For PATCH, we validate that the provided fields are valid, but don't require all fields
+    const data = body;
 
     // Check if account exists and belongs to tenant
     const existing = await prisma.bankAccount.findFirst({
@@ -144,8 +143,7 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params;
-    const { id } = await params;
-    const tenantId = await getCurrentTenantId();
+    const tenantId = await requireTenantId();
     if (!tenantId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }

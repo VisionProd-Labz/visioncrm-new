@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getCurrentTenantId } from '@/lib/tenant';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { getCurrentTenantId, requireTenantId } from '@/lib/tenant';
+import { auth } from '@/auth';
 
 /**
  * POST /api/accounting/expenses/[id]/approve
@@ -14,12 +13,12 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
-    const tenantId = await getCurrentTenantId();
+    const tenantId = await requireTenantId();
     if (!tenantId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const session = await getServerSession(authOptions);
+    const session = await auth();
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }

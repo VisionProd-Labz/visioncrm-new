@@ -1,28 +1,33 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, Search, Package, Filter, Grid3x3, List, Upload, Download } from 'lucide-react';
+import { Plus, Search, Package, Filter, Grid3x3, List, Upload, Download, Image as ImageIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useLanguage } from '@/contexts/language-context';
-import { AddProductDialog } from '@/components/catalog/add-product-dialog';
+import { ProductModal } from '@/components/catalog/product-modal';
 import { CsvImportDialog } from '@/components/catalog/csv-import-dialog';
 
 interface CatalogItem {
   id: string;
   name: string;
   reference: string;
+  description?: string;
   category: string;
   price: number;
+  cost?: number;
   stock: number;
-  image?: string;
+  min_stock?: number;
+  image_url?: string;
 }
 
 export default function CatalogPage() {
   const { t } = useLanguage();
   const [searchQuery, setSearchQuery] = useState('');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
-  const [addDialogOpen, setAddDialogOpen] = useState(false);
+  const [showProductModal, setShowProductModal] = useState(false);
+  const [productModalMode, setProductModalMode] = useState<'create' | 'view' | 'edit'>('create');
+  const [selectedProduct, setSelectedProduct] = useState<CatalogItem | null>(null);
   const [csvDialogOpen, setCsvDialogOpen] = useState(false);
   const [catalogItems, setCatalogItems] = useState<CatalogItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -53,10 +58,13 @@ export default function CatalogPage() {
         id: item.id,
         name: item.name,
         reference: item.reference,
+        description: item.description,
         category: item.category,
         price: Number(item.price),
+        cost: item.cost ? Number(item.cost) : undefined,
         stock: item.stock,
-        image: item.image_url,
+        min_stock: item.min_stock,
+        image_url: item.image_url,
       }));
 
       setCatalogItems(transformedItems);
@@ -89,9 +97,60 @@ export default function CatalogPage() {
     a.click();
   };
 
+  const handleSaveProduct = async (data: any) => {
+    if (productModalMode === 'create') {
+      const response = await fetch('/api/catalog', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to create product');
+      }
+
+      await fetchCatalogItems();
+    } else {
+      const response = await fetch(`/api/catalog/${selectedProduct?.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to update product');
+      }
+
+      await fetchCatalogItems();
+    }
+  };
+
+  const handleProductClick = (product: CatalogItem) => {
+    setSelectedProduct(product);
+    setProductModalMode('view');
+    setShowProductModal(true);
+  };
+
+  const handleCreateProduct = () => {
+    setSelectedProduct(null);
+    setProductModalMode('create');
+    setShowProductModal(true);
+  };
+
   return (
     <>
-      <AddProductDialog open={addDialogOpen} onOpenChange={setAddDialogOpen} />
+      <ProductModal
+        isOpen={showProductModal}
+        onClose={() => {
+          setShowProductModal(false);
+          setSelectedProduct(null);
+        }}
+        product={selectedProduct}
+        mode={productModalMode}
+        onSave={handleSaveProduct}
+      />
       <CsvImportDialog open={csvDialogOpen} onOpenChange={setCsvDialogOpen} />
 
       <div className="p-6 space-y-6">
@@ -112,7 +171,7 @@ export default function CatalogPage() {
               <Download className="h-4 w-4" />
               {t('catalog.export')}
             </Button>
-            <Button className="gap-2" onClick={() => setAddDialogOpen(true)}>
+            <Button className="gap-2" onClick={handleCreateProduct}>
               <Plus className="h-4 w-4" />
               {t('catalog.add_product')}
             </Button>
@@ -156,31 +215,53 @@ export default function CatalogPage() {
       {/* Catalog Items - Grid View */}
       {viewMode === 'grid' && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {filteredItems.map((item) => (
-            <div
-              key={item.id}
-              className="border border-border rounded-lg p-4 hover:border-primary transition-colors cursor-pointer bg-card"
-            >
-              <div className="aspect-square bg-muted rounded-lg mb-3 flex items-center justify-center">
-                <Package className="h-12 w-12 text-muted-foreground" />
+          {filteredItems.map((item) => {
+            const isLowStock = item.stock > 0 && item.min_stock && item.stock <= item.min_stock;
+            const isOutOfStock = item.stock === 0;
+
+            return (
+              <div
+                key={item.id}
+                onClick={() => handleProductClick(item)}
+                className="border border-border rounded-lg p-4 hover:border-primary hover:shadow-lg transition-all cursor-pointer bg-card group"
+              >
+                <div className="aspect-square bg-muted rounded-lg mb-3 overflow-hidden border border-border">
+                  {item.image_url ? (
+                    <img
+                      src={item.image_url}
+                      alt={item.name}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                      onError={(e) => {
+                        e.currentTarget.style.display = 'none';
+                        e.currentTarget.parentElement!.innerHTML = '<div class="w-full h-full flex items-center justify-center"><svg class="h-12 w-12 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path></svg></div>';
+                      }}
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center">
+                      <Package className="h-12 w-12 text-muted-foreground" />
+                    </div>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <div>
+                    <h3 className="font-medium text-foreground truncate">{item.name}</h3>
+                    <p className="text-xs text-muted-foreground font-mono">{item.reference}</p>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs px-2 py-1 bg-muted rounded-md truncate">{item.category}</span>
+                    <span className={`text-xs font-medium whitespace-nowrap ${
+                      isOutOfStock ? 'text-red-600' : isLowStock ? 'text-amber-600' : 'text-green-600'
+                    }`}>
+                      {isOutOfStock ? 'Rupture' : `Stock: ${item.stock}`}
+                    </span>
+                  </div>
+                  <div className="pt-2 border-t border-border">
+                    <p className="text-lg font-bold text-primary">{item.price.toFixed(2)} €</p>
+                  </div>
+                </div>
               </div>
-              <div className="space-y-2">
-                <div>
-                  <h3 className="font-medium text-foreground">{item.name}</h3>
-                  <p className="text-xs text-muted-foreground">{item.reference}</p>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-xs px-2 py-1 bg-muted rounded-md">{item.category}</span>
-                  <span className={`text-xs ${item.stock > 10 ? 'text-green-600' : 'text-orange-600'}`}>
-                    {t('catalog.stock')}: {item.stock}
-                  </span>
-                </div>
-                <div className="pt-2 border-t border-border">
-                  <p className="text-lg font-bold text-primary">{item.price.toFixed(2)} €</p>
-                </div>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -199,26 +280,55 @@ export default function CatalogPage() {
               </tr>
             </thead>
             <tbody>
-              {filteredItems.map((item, index) => (
-                <tr key={item.id} className={index % 2 === 0 ? 'bg-background' : 'bg-muted/50'}>
-                  <td className="p-3 text-sm font-mono">{item.reference}</td>
-                  <td className="p-3 text-sm font-medium">{item.name}</td>
-                  <td className="p-3 text-sm">
-                    <span className="px-2 py-1 bg-muted rounded-md text-xs">{item.category}</span>
-                  </td>
-                  <td className="p-3 text-sm text-right font-medium">{item.price.toFixed(2)} €</td>
-                  <td className="p-3 text-sm text-right">
-                    <span className={item.stock > 10 ? 'text-green-600' : 'text-orange-600'}>
-                      {item.stock}
-                    </span>
-                  </td>
-                  <td className="p-3">
-                    <Button variant="ghost" size="icon">
-                      <Package className="h-4 w-4" />
-                    </Button>
-                  </td>
-                </tr>
-              ))}
+              {filteredItems.map((item, index) => {
+                const isLowStock = item.stock > 0 && item.min_stock && item.stock <= item.min_stock;
+                const isOutOfStock = item.stock === 0;
+
+                return (
+                  <tr
+                    key={item.id}
+                    onClick={() => handleProductClick(item)}
+                    className={`cursor-pointer hover:bg-primary/5 transition-colors ${
+                      index % 2 === 0 ? 'bg-background' : 'bg-muted/50'
+                    }`}
+                  >
+                    <td className="p-3 text-sm font-mono">{item.reference}</td>
+                    <td className="p-3 text-sm font-medium flex items-center gap-2">
+                      {item.image_url && (
+                        <img
+                          src={item.image_url}
+                          alt={item.name}
+                          className="w-8 h-8 rounded object-cover"
+                          onError={(e) => {
+                            e.currentTarget.style.display = 'none';
+                          }}
+                        />
+                      )}
+                      {item.name}
+                    </td>
+                    <td className="p-3 text-sm">
+                      <span className="px-2 py-1 bg-muted rounded-md text-xs">{item.category}</span>
+                    </td>
+                    <td className="p-3 text-sm text-right font-medium">{item.price.toFixed(2)} €</td>
+                    <td className="p-3 text-sm text-right">
+                      <span className={`font-medium ${
+                        isOutOfStock ? 'text-red-600' : isLowStock ? 'text-amber-600' : 'text-green-600'
+                      }`}>
+                        {isOutOfStock ? 'Rupture' : item.stock}
+                      </span>
+                    </td>
+                    <td className="p-3">
+                      <div className="flex items-center justify-center">
+                        {item.image_url ? (
+                          <ImageIcon className="h-4 w-4 text-muted-foreground" />
+                        ) : (
+                          <Package className="h-4 w-4 text-muted-foreground" />
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

@@ -1,0 +1,100 @@
+import { NextResponse } from 'next/server';
+import { auth } from '@/auth';
+import { prisma } from '@/lib/prisma';
+
+/**
+ * POST /api/rgpd/dsar/export
+ * Export all user data (GDPR right to data portability)
+ */
+export async function POST(req: Request) {
+  try {
+    const session = await auth();
+
+    if (!session?.user?.id) {
+      return NextResponse.json(
+        { error: 'Non authentifié' },
+        { status: 401 }
+      );
+    }
+
+    const userId = session.user.id;
+    const tenantId = (session.user as any).tenantId;
+
+    // Gather all user data
+    const userData = {
+      // User info
+      user: await prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          role: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      }),
+
+      // User consents
+      consents: await prisma.userConsent.findMany({
+        where: { user_id: userId },
+      }),
+
+      // DSAR requests
+      dsarRequests: await prisma.dsarRequest.findMany({
+        where: { user_id: userId },
+      }),
+
+      // Access logs
+      accessLogs: await prisma.accessLog.findMany({
+        where: { user_id: userId },
+        orderBy: { created_at: 'desc' },
+        take: 1000, // Limit to last 1000 logs
+      }),
+
+      // Activities
+      activities: await prisma.activity.findMany({
+        where: { user_id: userId },
+        orderBy: { created_at: 'desc' },
+      }),
+
+      // Tasks assigned to user
+      tasks: await prisma.task.findMany({
+        where: {
+          assignee_id: userId,
+          deleted_at: null,
+        },
+      }),
+
+      // Export metadata
+      exportedAt: new Date().toISOString(),
+      exportedBy: userId,
+      exportFormat: 'JSON',
+    };
+
+    // Create DSAR request for this export
+    await prisma.dsarRequest.create({
+      data: {
+        user_id: userId,
+        request_type: 'ACCESS',
+        status: 'COMPLETED',
+        completed_at: new Date(),
+        notes: 'Data export completed',
+      },
+    });
+
+    // Return the data as JSON
+    return NextResponse.json(userData, {
+      headers: {
+        'Content-Disposition': `attachment; filename="user_data_${userId}_${Date.now()}.json"`,
+        'Content-Type': 'application/json',
+      },
+    });
+  } catch (error) {
+    console.error('Export user data error:', error);
+    return NextResponse.json(
+      { error: 'Erreur lors de l\'export des données' },
+      { status: 500 }
+    );
+  }
+}

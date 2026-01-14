@@ -17,6 +17,7 @@ import {
   ArrowRight,
 } from 'lucide-react';
 import { MetricCard } from '@/components/dashboard/metric-card';
+import { NewQuoteModal } from '@/components/dashboard/new-quote-modal';
 import { useLanguage } from '@/contexts/language-context';
 import { useModules } from '@/contexts/modules-context';
 import { useRouter } from 'next/navigation';
@@ -48,6 +49,7 @@ export default function DashboardPage() {
   const router = useRouter();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [newQuoteModalOpen, setNewQuoteModalOpen] = useState(false);
 
   useEffect(() => {
     fetchDashboardStats();
@@ -148,43 +150,49 @@ export default function DashboardPage() {
   };
 
   return (
-    <div className="p-6 space-y-6">
-      {/* Welcome Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="flex items-center gap-3 mb-2">
-            <div className="w-12 h-12 rounded-md bg-gradient-to-br from-primary to-blue-600 flex items-center justify-center">
-              <Car className="w-6 h-6 text-white" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold text-foreground">{t('dashboard.title')}</h1>
-              <div className="flex items-center gap-2 text-sm text-muted-foreground mt-0.5">
-                <span>VisionCRM</span>
-                <span className="w-1 h-1 rounded-full bg-muted-foreground"></span>
-                <span className="inline-flex items-center gap-1">
-                  <Users className="w-3 h-3" />
-                  {stats?.contacts.total} {t('dashboard.clients')}
-                </span>
-                <span className="w-1 h-1 rounded-full bg-muted-foreground"></span>
-                <span className="inline-flex items-center gap-1">
-                  <Car className="w-3 h-3" />
-                  {stats?.vehicles.total} {t('dashboard.vehicles')}
-                </span>
+    <>
+      <NewQuoteModal open={newQuoteModalOpen} onOpenChange={setNewQuoteModalOpen} />
+
+      <div className="p-6 space-y-6">
+        {/* Welcome Header */}
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="flex items-center gap-3 mb-2">
+              <div className="w-12 h-12 rounded-md bg-gradient-to-br from-primary to-blue-600 flex items-center justify-center">
+                <Car className="w-6 h-6 text-white" />
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold text-foreground">{t('dashboard.title')}</h1>
+                <div className="flex items-center gap-2 text-sm text-muted-foreground mt-0.5">
+                  <span>VisionCRM</span>
+                  <span className="w-1 h-1 rounded-full bg-muted-foreground"></span>
+                  <span className="inline-flex items-center gap-1">
+                    <Users className="w-3 h-3" />
+                    {stats?.contacts.total} {t('dashboard.clients')}
+                  </span>
+                  <span className="w-1 h-1 rounded-full bg-muted-foreground"></span>
+                  <span className="inline-flex items-center gap-1">
+                    <Car className="w-3 h-3" />
+                    {stats?.vehicles.total} {t('dashboard.vehicles')}
+                  </span>
+                </div>
               </div>
             </div>
           </div>
+          <button
+            onClick={() => setNewQuoteModalOpen(true)}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground border border-primary rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors"
+          >
+            <FileText className="w-4 h-4" />
+            {t('dashboard.new_quote')}
+          </button>
         </div>
-        <button className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground border border-primary rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors">
-          <FileText className="w-4 h-4" />
-          {t('dashboard.new_quote')}
-        </button>
-      </div>
 
       {/* KPI Cards Grid with Sparklines */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <MetricCard
           title={t('dashboard.revenue')}
-          value={`${stats?.invoices.totalAmount.toLocaleString('fr-FR')} €`}
+          value={`${(stats?.invoices.totalAmount || 0).toLocaleString('fr-FR')} €`}
           change={stats?.invoices.change}
           icon={Euro}
           iconColor="#3b82f6"
@@ -509,5 +517,6 @@ export default function DashboardPage() {
         </div>
       </div>
     </div>
+    </>
   );
 }

@@ -1,0 +1,119 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
+import { prisma } from '@/lib/prisma';
+import { inventoryItemSchema } from '@/lib/accounting/validations';
+import { z } from 'zod';
+
+// Utility function to get current tenant ID
+async function getCurrentTenantId(): Promise<string> {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.tenantId) {
+    throw new Error('No tenant ID found in session');
+  }
+  return session.user.tenantId;
+}
+
+/**
+ * GET /api/accounting/inventory
+ * List all inventory items for the current tenant
+ * Query params:
+ * - category: Filter by category
+ * - lowStock: Show only items below reorder point
+ */
+export async function GET(req: NextRequest) {
+  try {
+    const tenantId = await getCurrentTenantId();
+    const { searchParams } = new URL(req.url);
+
+    const category = searchParams.get('category');
+    const lowStock = searchParams.get('lowStock') === 'true';
+
+    const where: any = {
+      tenant_id: tenantId,
+      deleted_at: null,
+    };
+
+    if (category) where.category = category;
+
+    const items = await prisma.inventoryItem.findMany({
+      where,
+      orderBy: { created_at: 'desc' },
+    });
+
+    // Filter low stock items if requested
+    const filteredItems = lowStock
+      ? items.filter(item => item.quantity <= item.reorder_point)
+      : items;
+
+    // Calculate stats
+    const stats = {
+      totalItems: items.length,
+      totalValue: items.reduce((sum, item) => sum + Number(item.total_value), 0),
+      lowStockItems: items.filter(item => item.quantity <= item.reorder_point).length,
+      totalQuantity: items.reduce((sum, item) => sum + item.quantity, 0),
+      categories: Array.from(new Set(items.map(item => item.category))),
+    };
+
+    return NextResponse.json({ items: filteredItems, stats });
+  } catch (error) {
+    console.error('Error fetching inventory:', error);
+    return NextResponse.json(
+      { error: 'Une erreur est survenue lors de la récupération de l\'inventaire' },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * POST /api/accounting/inventory
+ * Create a new inventory item
+ */
+export async function POST(req: NextRequest) {
+  try {
+    const tenantId = await getCurrentTenantId();
+    const body = await req.json();
+
+    // Validate request body
+    const data = inventoryItemSchema.parse(body);
+
+    // Check for duplicate SKU
+    const existing = await prisma.inventoryItem.findFirst({
+      where: {
+        tenant_id: tenantId,
+        sku: data.sku,
+        deleted_at: null,
+      },
+    });
+
+    if (existing) {
+      return NextResponse.json(
+        { error: 'Un article avec ce SKU existe déjà' },
+        { status: 400 }
+      );
+    }
+
+    // Create inventory item
+    const item = await prisma.inventoryItem.create({
+      data: {
+        ...data,
+        tenant_id: tenantId,
+      },
+    });
+
+    return NextResponse.json(item, { status: 201 });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: 'Données invalides', details: error.errors },
+        { status: 400 }
+      );
+    }
+
+    console.error('Error creating inventory item:', error);
+    return NextResponse.json(
+      { error: 'Une erreur est survenue lors de la création de l\'article' },
+      { status: 500 }
+    );
+  }
+}

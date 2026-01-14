@@ -30,8 +30,8 @@ export function InventoryForm({ initialData, isEditing = false }: InventoryFormP
     handleSubmit,
     formState: { errors },
     watch,
-  } = useForm<InventoryItemFormData>({
-    resolver: zodResolver(inventoryItemSchema),
+  } = useForm({
+    resolver: zodResolver(inventoryItemSchema) as any,
     defaultValues: {
       sku: initialData?.sku || '',
       name: initialData?.name || '',
@@ -69,7 +69,7 @@ export function InventoryForm({ initialData, isEditing = false }: InventoryFormP
     });
   }, [quantity, unitCost, depreciationRate]);
 
-  const onSubmit = async (data: InventoryItemFormData) => {
+  const onSubmit = async (data: any) => {
     setIsLoading(true);
     try {
       const url = isEditing && initialData?.id

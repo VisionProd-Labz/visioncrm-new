@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getCurrentTenantId } from '@/lib/tenant';
+import { getCurrentTenantId, requireTenantId } from '@/lib/tenant';
 import { sendInvoiceEmail } from '@/lib/email';
 
 /**
@@ -38,7 +38,7 @@ export async function POST(
   const { id } = await params;
 
   try {
-    const tenantId = await getCurrentTenantId();
+    const tenantId = await requireTenantId();
 
     // Get quote
     const quote = await prisma.quote.findFirst({

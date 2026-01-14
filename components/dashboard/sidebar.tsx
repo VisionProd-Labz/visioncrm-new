@@ -28,6 +28,7 @@ import {
   PackageSearch,
   FolderOpen,
   Scale,
+  Kanban,
 } from 'lucide-react';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { useSidebar } from '@/contexts/sidebar-context';
@@ -37,6 +38,7 @@ import { useModules } from '@/contexts/modules-context';
 const mainNav = [
   { key: 'nav.dashboard', href: '/dashboard', icon: LayoutDashboard },
   { key: 'nav.contacts', href: '/contacts', icon: Users },
+  { key: 'nav.projects', href: '/projects', icon: Kanban },
   { key: 'nav.catalog', href: '/catalog', icon: Package },
   { key: 'nav.planning', href: '/planning', icon: Calendar },
 ];
@@ -59,9 +61,9 @@ const toolsNav = [
   { key: 'nav.vehicles', href: '/vehicles', icon: Car, module: 'vehicles' as const },
   { key: 'nav.tasks', href: '/tasks', icon: CheckSquare, module: 'tasks' as const },
   { key: 'nav.communications', href: '/communications', icon: MessageSquare, module: 'communications' as const },
-  { key: 'nav.email', href: '/email', icon: Mail },
+  // { key: 'nav.email', href: '/email', icon: Mail }, // Temporairement désactivé - OAuth non configuré
   { key: 'nav.reports', href: '/reports', icon: BarChart3, module: 'reports' as const },
-  { key: 'nav.ai_assistant', href: '/ai-assistant', icon: Bot },
+  // { key: 'nav.ai_assistant', href: '/ai-assistant', icon: Bot }, // Temporairement désactivé - API en configuration
   { key: 'nav.company', href: '/company', icon: Building2 },
   { key: 'nav.team', href: '/team', icon: UserCog },
   { key: 'nav.settings', href: '/settings', icon: Settings },
@@ -176,8 +178,8 @@ export function Sidebar() {
           </div>
         )}
 
-        {/* VisionCRM AI */}
-        {!isCollapsed && (
+        {/* VisionCRM AI - Temporairement désactivé */}
+        {/* {!isCollapsed && (
           <div className="p-4 rounded-lg bg-primary/10 border border-primary/20">
             <div className="flex items-start gap-3 mb-3">
               <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0">
@@ -194,7 +196,7 @@ export function Sidebar() {
               </button>
             </Link>
           </div>
-        )}
+        )} */}
       </div>
     </div>
   );

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Calendar as CalendarIcon, Plus, ChevronLeft, ChevronRight, Clock, Edit, Trash2, Eye, MoreVertical, MapPin } from 'lucide-react';
+import { Calendar as CalendarIcon, Plus, ChevronLeft, ChevronRight, Clock, Edit, Trash2, Eye, MoreVertical, MapPin, Users, Filter } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -29,6 +29,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Checkbox } from '@/components/ui/checkbox';
+
+interface TeamMember {
+  id: string;
+  name: string | null;
+  email: string;
+  image: string | null;
+  role: string;
+}
 
 interface Event {
   id: string;
@@ -40,6 +49,7 @@ interface Event {
   type: 'maintenance' | 'repair' | 'meeting' | 'other';
   client?: string;
   vehicle?: string;
+  assigned_users?: string[]; // User IDs from metadata
 }
 
 export default function PlanningPage() {
@@ -49,6 +59,9 @@ export default function PlanningPage() {
   const [viewMode, setViewMode] = useState<'month' | 'week' | 'day' | 'agenda'>('month');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [events, setEvents] = useState<Event[]>([]);
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
+  const [selectedUsers, setSelectedUsers] = useState<Set<string>>(new Set());
+  const [showUserFilter, setShowUserFilter] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [eventForm, setEventForm] = useState({
@@ -61,11 +74,29 @@ export default function PlanningPage() {
     all_day: false,
     type: 'MEETING' as 'MAINTENANCE' | 'REPAIR' | 'MEETING' | 'CALL' | 'SITE_VISIT' | 'OTHER',
     location: '',
+    assigned_users: [] as string[],
   });
 
   useEffect(() => {
     fetchEvents();
+    fetchTeamMembers();
   }, [currentDate]);
+
+  const fetchTeamMembers = async () => {
+    try {
+      const response = await fetch('/api/team');
+      if (!response.ok) throw new Error('Failed to fetch team');
+
+      const data = await response.json();
+      setTeamMembers(data.members || []);
+
+      // Select all users by default
+      const allUserIds = new Set<string>(data.members.map((m: any) => m.id as string));
+      setSelectedUsers(allUserIds);
+    } catch (error) {
+      console.error('Error fetching team:', error);
+    }
+  };
 
   const fetchEvents = async () => {
     try {
@@ -98,6 +129,7 @@ export default function PlanningPage() {
         type: event.type.toLowerCase() as Event['type'],
         client: event.metadata?.client_name,
         vehicle: event.metadata?.vehicle_info,
+        assigned_users: event.metadata?.assigned_users || [],
       }));
 
       setEvents(transformedEvents);
@@ -145,10 +177,54 @@ export default function PlanningPage() {
     const date = new Date(currentDate.getFullYear(), currentDate.getMonth(), day);
     return events.filter(event => {
       const eventDate = new Date(event.startDate);
-      return eventDate.getDate() === day &&
+      const matchesDate = eventDate.getDate() === day &&
         eventDate.getMonth() === date.getMonth() &&
         eventDate.getFullYear() === date.getFullYear();
+
+      // Filter by selected users
+      if (selectedUsers.size === 0) return matchesDate;
+
+      const eventUsers = event.assigned_users || [];
+      const hasSelectedUser = eventUsers.length === 0 ||
+        eventUsers.some(userId => selectedUsers.has(userId));
+
+      return matchesDate && hasSelectedUser;
     });
+  };
+
+  const toggleUserSelection = (userId: string) => {
+    const newSelection = new Set(selectedUsers);
+    if (newSelection.has(userId)) {
+      newSelection.delete(userId);
+    } else {
+      newSelection.add(userId);
+    }
+    setSelectedUsers(newSelection);
+  };
+
+  const selectAllUsers = () => {
+    const allUserIds = new Set(teamMembers.map(m => m.id));
+    setSelectedUsers(allUserIds);
+  };
+
+  const deselectAllUsers = () => {
+    setSelectedUsers(new Set());
+  };
+
+  const getUserColor = (userId: string) => {
+    // Generate consistent color for each user based on their ID
+    const colors = [
+      'bg-blue-500',
+      'bg-green-500',
+      'bg-purple-500',
+      'bg-pink-500',
+      'bg-amber-500',
+      'bg-cyan-500',
+      'bg-indigo-500',
+      'bg-rose-500',
+    ];
+    const index = teamMembers.findIndex(m => m.id === userId);
+    return colors[index % colors.length];
   };
 
   const previousMonth = () => {
@@ -186,6 +262,7 @@ export default function PlanningPage() {
       all_day: false,
       type: 'MEETING',
       location: '',
+      assigned_users: [],
     });
   };
 
@@ -219,6 +296,9 @@ export default function PlanningPage() {
           all_day: eventForm.all_day,
           type: eventForm.type,
           location: eventForm.location,
+          metadata: {
+            assigned_users: eventForm.assigned_users,
+          },
         }),
       });
 
@@ -282,7 +362,7 @@ export default function PlanningPage() {
         </div>
 
         <div className="flex gap-2">
-          {(['month', 'week', 'day', 'agenda'] as const).map((mode) => (
+          {(['month', 'agenda'] as const).map((mode) => (
             <Button
               key={mode}
               variant={viewMode === mode ? 'default' : 'outline'}
@@ -292,6 +372,91 @@ export default function PlanningPage() {
               {t(`planning.${mode}`)}
             </Button>
           ))}
+
+          {/* User Filter */}
+          <DropdownMenu open={showUserFilter} onOpenChange={setShowUserFilter}>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="gap-2">
+                <Users className="h-4 w-4" />
+                Utilisateurs ({selectedUsers.size}/{teamMembers.length})
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-72 p-3">
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium">Filtrer par utilisateur</span>
+                  <div className="flex gap-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 text-xs"
+                      onClick={selectAllUsers}
+                    >
+                      Tous
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 text-xs"
+                      onClick={deselectAllUsers}
+                    >
+                      Aucun
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="space-y-2 max-h-64 overflow-y-auto">
+                  {teamMembers.map((member) => {
+                    const isSelected = selectedUsers.has(member.id);
+                    const userColor = getUserColor(member.id);
+
+                    return (
+                      <div
+                        key={member.id}
+                        className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 cursor-pointer transition-colors"
+                        onClick={() => toggleUserSelection(member.id)}
+                      >
+                        <Checkbox
+                          checked={isSelected}
+                          onCheckedChange={() => toggleUserSelection(member.id)}
+                          className="pointer-events-none"
+                        />
+
+                        {member.image ? (
+                          <img
+                            src={member.image}
+                            alt={member.name || member.email}
+                            className={`w-8 h-8 rounded-full object-cover ring-2 ${
+                              isSelected ? `ring-primary` : 'ring-transparent'
+                            }`}
+                          />
+                        ) : (
+                          <div
+                            className={`w-8 h-8 rounded-full ${userColor} flex items-center justify-center text-white text-sm font-medium ring-2 ${
+                              isSelected ? 'ring-primary' : 'ring-transparent'
+                            }`}
+                          >
+                            {(member.name || member.email).charAt(0).toUpperCase()}
+                          </div>
+                        )}
+
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-foreground truncate">
+                            {member.name || member.email}
+                          </p>
+                          <p className="text-xs text-muted-foreground truncate">
+                            {member.role}
+                          </p>
+                        </div>
+
+                        <div className={`w-2 h-2 rounded-full ${userColor}`} />
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
@@ -444,16 +609,6 @@ export default function PlanningPage() {
         </div>
       )}
 
-      {/* Week and Day views placeholder */}
-      {(viewMode === 'week' || viewMode === 'day') && (
-        <div className="bg-card border border-border rounded-lg p-6">
-          <div className="text-center py-12">
-            <CalendarIcon className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-            <p className="text-muted-foreground">{t('planning.view_in_development')}</p>
-          </div>
-        </div>
-      )}
-
       {/* Create Event Modal */}
       <Dialog open={showCreateModal} onOpenChange={(open) => {
         setShowCreateModal(open);
@@ -586,6 +741,62 @@ export default function PlanningPage() {
                   placeholder="Adresse ou lieu de l'événement"
                   className="pl-10"
                 />
+              </div>
+            </div>
+
+            {/* Assigned Users */}
+            <div className="space-y-2">
+              <Label>Assigner à</Label>
+              <div className="border border-border rounded-lg p-3 space-y-2 max-h-48 overflow-y-auto">
+                {teamMembers.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">Aucun membre disponible</p>
+                ) : (
+                  teamMembers.map((member) => {
+                    const isAssigned = eventForm.assigned_users.includes(member.id);
+                    const userColor = getUserColor(member.id);
+
+                    return (
+                      <div
+                        key={member.id}
+                        className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 cursor-pointer transition-colors"
+                        onClick={() => {
+                          const newAssigned = isAssigned
+                            ? eventForm.assigned_users.filter(id => id !== member.id)
+                            : [...eventForm.assigned_users, member.id];
+                          setEventForm({ ...eventForm, assigned_users: newAssigned });
+                        }}
+                      >
+                        <Checkbox
+                          checked={isAssigned}
+                          className="pointer-events-none"
+                        />
+
+                        {member.image ? (
+                          <img
+                            src={member.image}
+                            alt={member.name || member.email}
+                            className="w-8 h-8 rounded-full object-cover"
+                          />
+                        ) : (
+                          <div
+                            className={`w-8 h-8 rounded-full ${userColor} flex items-center justify-center text-white text-sm font-medium`}
+                          >
+                            {(member.name || member.email).charAt(0).toUpperCase()}
+                          </div>
+                        )}
+
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-foreground truncate">
+                            {member.name || member.email}
+                          </p>
+                          <p className="text-xs text-muted-foreground truncate">
+                            {member.role}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
               </div>
             </div>
           </div>

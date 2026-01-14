@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { signOut } from 'next-auth/react';
+import { signOut, useSession } from 'next-auth/react';
 import { Search, Bell, User, Settings, LogOut, Building2, FileText, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -135,8 +135,19 @@ const LuxembourgishFlag = () => (
 export function Header() {
   const router = useRouter();
   const { language, setLanguage, t } = useLanguage();
+  const { data: session } = useSession();
   const [notificationCount] = useState(4);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+
+  // Get user initials from name
+  const getUserInitials = (name: string | null | undefined) => {
+    if (!name) return 'U';
+    const names = name.split(' ');
+    if (names.length >= 2) {
+      return `${names[0][0]}${names[1][0]}`.toUpperCase();
+    }
+    return name.substring(0, 2).toUpperCase();
+  };
 
   const handleLogout = async () => {
     await signOut({ redirect: false });
@@ -392,18 +403,28 @@ export function Header() {
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" className="h-9 gap-2 px-2">
-              <div className="w-6 h-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-semibold">
-                AU
-              </div>
-              <span className="text-xs font-medium hidden sm:inline-block">Admin User</span>
+              {session?.user?.image ? (
+                <img
+                  src={session.user.image}
+                  alt={session.user.name || ''}
+                  className="w-6 h-6 rounded-full object-cover"
+                />
+              ) : (
+                <div className="w-6 h-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-semibold">
+                  {getUserInitials(session?.user?.name)}
+                </div>
+              )}
+              <span className="text-xs font-medium hidden sm:inline-block">
+                {session?.user?.name || 'User'}
+              </span>
               <div className="w-1 h-1 rounded-full bg-emerald-500 hidden sm:block" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-64">
             <DropdownMenuLabel>
               <div className="flex flex-col space-y-1">
-                <p className="text-sm font-medium">Admin User</p>
-                <p className="text-xs text-muted-foreground">admin@example.com</p>
+                <p className="text-sm font-medium">{session?.user?.name || 'User'}</p>
+                <p className="text-xs text-muted-foreground">{session?.user?.email || ''}</p>
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />

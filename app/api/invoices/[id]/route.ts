@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getCurrentTenantId } from '@/lib/tenant';
+import { getCurrentTenantId, requireTenantId } from '@/lib/tenant';
 import { z } from 'zod';
 
 /**
@@ -14,7 +14,7 @@ export async function GET(
   const { id } = await params;
 
   try {
-    const tenantId = await getCurrentTenantId();
+    const tenantId = await requireTenantId();
 
     const invoice = await prisma.invoice.findFirst({
       where: {
@@ -66,7 +66,7 @@ export async function PATCH(
   const { id } = await params;
 
   try {
-    const tenantId = await getCurrentTenantId();
+    const tenantId = await requireTenantId();
     const body = await req.json();
 
     // Check invoice exists
@@ -148,7 +148,7 @@ export async function DELETE(
   const { id } = await params;
 
   try {
-    const tenantId = await getCurrentTenantId();
+    const tenantId = await requireTenantId();
 
     // Check invoice exists
     const existing = await prisma.invoice.findFirst({

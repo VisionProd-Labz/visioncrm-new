@@ -1,0 +1,109 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
+import { getCurrentTenantId } from '@/lib/tenant';
+import { bankAccountSchema } from '@/lib/accounting/validations';
+import { z } from 'zod';
+
+/**
+ * GET /api/accounting/bank-accounts
+ * Get all bank accounts for current tenant
+ */
+export async function GET(req: NextRequest) {
+  try {
+    const tenantId = await getCurrentTenantId();
+    if (!tenantId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const { searchParams } = new URL(req.url);
+    const isActive = searchParams.get('is_active');
+
+    const accounts = await prisma.bankAccount.findMany({
+      where: {
+        tenant_id: tenantId,
+        deleted_at: null,
+        ...(isActive !== null && { is_active: isActive === 'true' }),
+      },
+      include: {
+        _count: {
+          select: {
+            transactions: true,
+            reconciliations: true,
+          },
+        },
+      },
+      orderBy: {
+        created_at: 'desc',
+      },
+    });
+
+    return NextResponse.json({ accounts });
+  } catch (error) {
+    console.error('Error fetching bank accounts:', error);
+    return NextResponse.json(
+      { error: 'Failed to fetch bank accounts' },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * POST /api/accounting/bank-accounts
+ * Create a new bank account
+ */
+export async function POST(req: NextRequest) {
+  try {
+    const tenantId = await getCurrentTenantId();
+    if (!tenantId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const body = await req.json();
+    const data = bankAccountSchema.parse(body);
+
+    // Check if account number already exists for this tenant
+    const existing = await prisma.bankAccount.findFirst({
+      where: {
+        tenant_id: tenantId,
+        account_number: data.account_number,
+        deleted_at: null,
+      },
+    });
+
+    if (existing) {
+      return NextResponse.json(
+        { error: 'Un compte avec ce numéro existe déjà' },
+        { status: 400 }
+      );
+    }
+
+    const account = await prisma.bankAccount.create({
+      data: {
+        ...data,
+        tenant_id: tenantId,
+      },
+      include: {
+        _count: {
+          select: {
+            transactions: true,
+            reconciliations: true,
+          },
+        },
+      },
+    });
+
+    return NextResponse.json(account, { status: 201 });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: 'Données invalides', details: error.errors },
+        { status: 400 }
+      );
+    }
+    console.error('Error creating bank account:', error);
+    return NextResponse.json(
+      { error: 'Failed to create bank account' },
+      { status: 500 }
+    );
+  }
+}

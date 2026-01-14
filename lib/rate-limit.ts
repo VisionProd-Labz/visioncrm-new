@@ -1,12 +1,15 @@
-import { Redis } from '@upstash/redis';
+// Redis import disabled for MVP - install @upstash/redis to enable
+// import { Redis } from '@upstash/redis';
 
 // Initialize Redis client (will use env vars)
-const redis = process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN
-  ? new Redis({
-      url: process.env.UPSTASH_REDIS_REST_URL,
-      token: process.env.UPSTASH_REDIS_REST_TOKEN,
-    })
-  : null;
+// For MVP: Redis disabled, rate limiting will use in-memory fallback
+const redis: any = null;
+// const redis = process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN
+//   ? new Redis({
+//       url: process.env.UPSTASH_REDIS_REST_URL,
+//       token: process.env.UPSTASH_REDIS_REST_TOKEN,
+//     })
+//   : null;
 
 /**
  * Rate limit configuration

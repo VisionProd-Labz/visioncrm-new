@@ -60,7 +60,26 @@
       "Bash(app/\\\\\\(auth\\\\\\)/verify-email/page.tsx)",
       "Bash(git init:*)",
       "Bash(git config:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git rm:*)",
+      "Bash(git push:*)",
+      "Bash(dir .env*)",
+      "Bash(move /Y .env .env.old.compromised:*)",
+      "Bash(move .env.new .env)",
+      "Bash(npx prisma migrate dev:*)",
+      "Bash(npx prisma migrate:*)",
+      "Bash(tree:*)",
+      "Bash(vercel --version:*)",
+      "Bash(npm install:*)",
+      "Bash(vercel login)",
+      "Bash(vercel whoami:*)",
+      "Bash(vercel login:*)",
+      "Bash(vercel:*)",
+      "Bash(vercel deploy:*)",
+      "Bash(curl:*)",
+      "Bash(done)",
+      "Bash(wc:*)"
     ]
   }
 }

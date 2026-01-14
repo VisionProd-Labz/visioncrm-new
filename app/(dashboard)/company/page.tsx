@@ -26,6 +26,7 @@ import { PaymentMethodsSettings } from '@/components/company/payment-methods-set
 import { PaymentTermsSettings } from '@/components/company/payment-terms-settings';
 import { TaskCategoriesSettings } from '@/components/company/task-categories-settings';
 import { RegionalSettings } from '@/components/company/regional-settings';
+import { DocumentsSection } from '@/components/company/documents-section';
 
 interface Document {
   id: string;
@@ -125,6 +126,51 @@ export default function CompanyPage() {
     }
   };
 
+  const handleSaveCompanyInfo = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+
+    try {
+      const formData = new FormData(e.currentTarget);
+
+      const payload = {
+        company_name: formData.get('companyName') as string,
+        company_siret: formData.get('siret') as string,
+        company_tva: formData.get('tva') as string,
+        company_address: formData.get('address') as string,
+        company_info: {
+          legal_form: formData.get('legalForm') as string,
+          city: formData.get('city') as string,
+          zipcode: formData.get('zipCode') as string,
+          email: formData.get('companyEmail') as string,
+          phone: formData.get('companyPhone') as string,
+          website: formData.get('website') as string,
+          description: formData.get('description') as string,
+          capital: formData.get('capital') as string,
+          creation_date: formData.get('creationDate') as string,
+        },
+      };
+
+      const response = await fetch('/api/company', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to save company info');
+      }
+
+      const updatedData = await response.json();
+      setCompanyInfo(updatedData);
+
+      // Show success message
+      alert('Informations de l\'entreprise sauvegardées avec succès');
+    } catch (error) {
+      console.error('Error saving company info:', error);
+      alert('Erreur lors de la sauvegarde des informations');
+    }
+  };
+
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
@@ -184,7 +230,7 @@ export default function CompanyPage() {
       <div className="bg-card border border-border rounded-lg p-6">
         {/* Informations Tab */}
         {activeTab === 'info' && (
-          <div className="space-y-6">
+          <form onSubmit={handleSaveCompanyInfo} className="space-y-6">
             <div className="space-y-4">
               {/* Logo Upload */}
               <div className="space-y-2">
@@ -205,14 +251,17 @@ export default function CompanyPage() {
                   <Label htmlFor="companyName">{t('company.name')} *</Label>
                   <Input
                     id="companyName"
-                    defaultValue="Ma Société SARL"
+                    name="companyName"
+                    defaultValue={companyInfo?.company_name || ''}
+                    required
                   />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="legalForm">{t('company.legal_form')}</Label>
                   <Input
                     id="legalForm"
-                    defaultValue="SARL"
+                    name="legalForm"
+                    defaultValue={companyInfo?.company_info?.legal_form || ''}
                     placeholder="Ex: SARL, SAS, EURL..."
                   />
                 </div>
@@ -223,13 +272,16 @@ export default function CompanyPage() {
                   <Label htmlFor="siret">{t('company.siret')}</Label>
                   <Input
                     id="siret"
-                    defaultValue="123 456 789 00012"
+                    name="siret"
+                    defaultValue={companyInfo?.company_siret || ''}
                   />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="tva">{t('company.tva')}</Label>
                   <Input
                     id="tva"
+                    name="tva"
+                    defaultValue={companyInfo?.company_tva || ''}
                     placeholder="FR12345678901"
                   />
                 </div>
@@ -241,8 +293,9 @@ export default function CompanyPage() {
                   <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input
                     id="address"
+                    name="address"
                     className="pl-10"
-                    defaultValue="12 Avenue de la République, 75011 Paris"
+                    defaultValue={companyInfo?.company_address || ''}
                   />
                 </div>
               </div>
@@ -250,11 +303,11 @@ export default function CompanyPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="city">{t('company.city')}</Label>
-                  <Input id="city" defaultValue="Paris" />
+                  <Input id="city" name="city" defaultValue={companyInfo?.company_info?.city || ''} />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="zipCode">{t('company.zipcode')}</Label>
-                  <Input id="zipCode" defaultValue="75011" />
+                  <Input id="zipCode" name="zipCode" defaultValue={companyInfo?.company_info?.zipcode || ''} />
                 </div>
               </div>
 
@@ -265,9 +318,10 @@ export default function CompanyPage() {
                     <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     <Input
                       id="companyEmail"
+                      name="companyEmail"
                       type="email"
                       className="pl-10"
-                      defaultValue="contact@masociete.fr"
+                      defaultValue={companyInfo?.company_info?.email || ''}
                     />
                   </div>
                 </div>
@@ -277,8 +331,9 @@ export default function CompanyPage() {
                     <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     <Input
                       id="companyPhone"
+                      name="companyPhone"
                       className="pl-10"
-                      defaultValue="+33 1 23 45 67 89"
+                      defaultValue={companyInfo?.company_info?.phone || ''}
                     />
                   </div>
                 </div>
@@ -288,7 +343,9 @@ export default function CompanyPage() {
                 <Label htmlFor="website">{t('company.website')}</Label>
                 <Input
                   id="website"
+                  name="website"
                   type="url"
+                  defaultValue={companyInfo?.company_info?.website || ''}
                   placeholder="https://www.masociete.fr"
                 />
               </div>
@@ -297,7 +354,9 @@ export default function CompanyPage() {
                 <Label htmlFor="description">{t('company.description')}</Label>
                 <Textarea
                   id="description"
+                  name="description"
                   rows={4}
+                  defaultValue={companyInfo?.company_info?.description || ''}
                   placeholder="Décrivez votre activité principale..."
                 />
               </div>
@@ -307,7 +366,9 @@ export default function CompanyPage() {
                   <Label htmlFor="capital">{t('company.capital')}</Label>
                   <Input
                     id="capital"
+                    name="capital"
                     type="number"
+                    defaultValue={companyInfo?.company_info?.capital || ''}
                     placeholder="Ex: 10000"
                   />
                 </div>
@@ -315,156 +376,34 @@ export default function CompanyPage() {
                   <Label htmlFor="creationDate">{t('company.creation_date')}</Label>
                   <Input
                     id="creationDate"
+                    name="creationDate"
                     type="date"
+                    defaultValue={companyInfo?.company_info?.creation_date || ''}
                   />
                 </div>
               </div>
 
-              <Button className="bg-primary hover:bg-primary/90 text-primary-foreground">
+              <Button type="submit" className="bg-primary hover:bg-primary/90 text-primary-foreground">
                 <Save className="mr-2 h-4 w-4" />
                 {t('company.save')}
               </Button>
             </div>
-          </div>
+          </form>
         )}
 
         {/* Documents Tab */}
         {activeTab === 'documents' && (
-          <div className="space-y-6">
-            {/* Upload Section */}
-            <div className="border-2 border-dashed border-border rounded-lg p-6">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center">
-                    <Upload className="h-6 w-6 text-primary" />
-                  </div>
-                  <div>
-                    <h3 className="font-medium text-foreground">{t('company.documents.upload')}</h3>
-                    <p className="text-sm text-muted-foreground">
-                      PDF, DOC, DOCX, JPG, PNG - Max 10 MB
-                    </p>
-                  </div>
-                </div>
-                <Button>
-                  <Plus className="h-4 w-4 mr-2" />
-                  Parcourir
-                </Button>
-              </div>
-            </div>
-
-            {/* Category Filter */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-medium text-foreground">Catégories</p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowAddCategory(!showAddCategory)}
-                >
-                  <Plus className="h-3 w-3 mr-1" />
-                  Nouvelle catégorie
-                </Button>
-              </div>
-
-              {showAddCategory && (
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={newCategoryName}
-                    onChange={(e) => setNewCategoryName(e.target.value)}
-                    onKeyPress={(e) => e.key === 'Enter' && addCustomCategory()}
-                    placeholder="Nom de la catégorie"
-                    className="flex h-8 w-full rounded-md border border-border bg-background px-3 py-1 text-sm"
-                  />
-                  <Button size="sm" onClick={addCustomCategory}>
-                    Ajouter
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => {
-                      setShowAddCategory(false);
-                      setNewCategoryName('');
-                    }}
-                  >
-                    Annuler
-                  </Button>
-                </div>
-              )}
-
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  variant={selectedCategory === 'all' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setSelectedCategory('all')}
-                >
-                  {t('company.documents.all')}
-                  <span className="ml-1.5 text-xs opacity-60">({documents.length})</span>
-                </Button>
-                {customCategories.map((cat) => {
-                  const count = documents.filter(doc => doc.category === cat).length;
-                  return (
-                    <Button
-                      key={cat}
-                      variant={selectedCategory === cat ? 'default' : 'outline'}
-                      size="sm"
-                      onClick={() => setSelectedCategory(cat)}
-                    >
-                      {cat}
-                      <span className="ml-1.5 text-xs opacity-60">({count})</span>
-                    </Button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Documents List */}
-            <div className="space-y-2">
-              {filteredDocuments.map((doc) => (
-                <div
-                  key={doc.id}
-                  className="flex items-center justify-between p-4 border border-border rounded-lg hover:bg-muted/50 transition-colors"
-                >
-                  <div className="flex items-center gap-4 flex-1">
-                    <div className="w-10 h-10 rounded bg-red-100 dark:bg-red-900/20 flex items-center justify-center">
-                      <FileText className="h-5 w-5 text-red-600 dark:text-red-400" />
-                    </div>
-                    <div className="flex-1">
-                      <h4 className="font-medium text-foreground">{doc.name}</h4>
-                      <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1">
-                        <span className="px-2 py-0.5 bg-muted rounded">{doc.category}</span>
-                        <span>{doc.uploadDate}</span>
-                        <span>{doc.size}</span>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button variant="ghost" size="icon">
-                      <Eye className="h-4 w-4" />
-                    </Button>
-                    <Button variant="ghost" size="icon">
-                      <Download className="h-4 w-4" />
-                    </Button>
-                    <Button variant="ghost" size="icon" className="text-red-600 hover:text-red-700">
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* Empty State */}
-            {filteredDocuments.length === 0 && (
-              <div className="text-center py-12">
-                <Folder className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
-                <p className="text-muted-foreground">
-                  {selectedCategory === 'all'
-                    ? t('company.documents.no_documents')
-                    : `Aucun document dans la catégorie "${selectedCategory}"`}
-                </p>
-              </div>
-            )}
-          </div>
+          <DocumentsSection
+            documents={documents}
+            onUpload={() => {
+              // TODO: Implement upload logic
+              console.log('Upload clicked');
+            }}
+            onDelete={(id) => {
+              // TODO: Implement delete logic
+              console.log('Delete document:', id);
+            }}
+          />
         )}
 
         {/* Configuration Tab */}

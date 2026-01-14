@@ -1,0 +1,97 @@
+import { NextResponse } from 'next/server';
+import { auth } from '@/auth';
+import { prisma } from '@/lib/prisma';
+
+/**
+ * POST /api/rgpd/dsar/delete
+ * Delete/anonymize user account (GDPR right to erasure)
+ */
+export async function POST(req: Request) {
+  try {
+    const session = await auth();
+
+    if (!session?.user?.id) {
+      return NextResponse.json(
+        { error: 'Non authentifié' },
+        { status: 401 }
+      );
+    }
+
+    const userId = session.user.id;
+    const tenantId = (session.user as any).tenantId;
+
+    // Check if user is the only OWNER of the tenant
+    const ownersCount = await prisma.user.count({
+      where: {
+        tenantId: tenantId,
+        role: 'OWNER',
+        deletedAt: null,
+      },
+    });
+
+    if (ownersCount === 1) {
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+      });
+
+      if (user?.role === 'OWNER') {
+        return NextResponse.json(
+          { error: 'Vous êtes le seul propriétaire de ce compte. Veuillez transférer la propriété avant de supprimer votre compte.' },
+          { status: 400 }
+        );
+      }
+    }
+
+    // Create DSAR request for deletion
+    await prisma.dsarRequest.create({
+      data: {
+        user_id: userId,
+        request_type: 'ERASURE',
+        status: 'COMPLETED',
+        completed_at: new Date(),
+        notes: 'Account deletion requested and completed',
+      },
+    });
+
+    // Anonymize user data (soft delete)
+    await prisma.user.update({
+      where: { id: userId },
+      data: {
+        email: `deleted_${userId}@anonymized.local`,
+        name: 'Utilisateur Supprimé',
+        password: null,
+        image: null,
+        deletedAt: new Date(),
+      },
+    });
+
+    // Delete sessions
+    await prisma.session.deleteMany({
+      where: { userId: userId },
+    });
+
+    // Delete accounts
+    await prisma.account.deleteMany({
+      where: { userId: userId },
+    });
+
+    // Anonymize activities (keep for audit but anonymize)
+    await prisma.activity.updateMany({
+      where: { user_id: userId },
+      data: {
+        description: 'Action d\'un utilisateur supprimé',
+      },
+    });
+
+    return NextResponse.json({
+      success: true,
+      message: 'Votre compte a été supprimé avec succès',
+    });
+  } catch (error) {
+    console.error('Delete user account error:', error);
+    return NextResponse.json(
+      { error: 'Erreur lors de la suppression du compte' },
+      { status: 500 }
+    );
+  }
+}

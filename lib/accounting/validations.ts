@@ -10,10 +10,10 @@ export const bankAccountSchema = z.object({
   iban: z.string().max(34).optional().nullable(),
   bic: z.string().max(11).optional().nullable(),
   bank_name: z.string().min(1, 'Le nom de la banque est requis').max(255),
-  account_type: z.string().max(50).default('CHECKING'),
-  balance: z.number().default(0),
-  currency: z.string().length(3).default('EUR'),
-  is_active: z.boolean().default(true),
+  account_type: z.string().max(50).optional().default('CHECKING'),
+  balance: z.number().optional().default(0),
+  currency: z.string().length(3).optional().default('EUR'),
+  is_active: z.boolean().optional().default(true),
 });
 
 export type BankAccountFormData = z.infer<typeof bankAccountSchema>;

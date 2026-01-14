@@ -1,0 +1,190 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { auth } from '@/auth';
+import { prisma } from '@/lib/prisma';
+import { z } from 'zod';
+
+const sendEmailSchema = z.object({
+  to: z.string().email(),
+  template: z.enum(['CLIENT_ACTIVATION', 'QUOTE_READY', 'INVOICE_SENT', 'APPOINTMENT_REMINDER', 'CUSTOM']),
+  subject: z.string().optional(),
+  body: z.string().optional(),
+  data: z.record(z.any()).optional(),
+});
+
+// Email templates
+const EMAIL_TEMPLATES = {
+  CLIENT_ACTIVATION: {
+    subject: (data: any) => `Bienvenue sur VisionCRM - Activez votre compte`,
+    body: (data: any) => `
+      <html>
+        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+          <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+            <h2 style="color: #f68100;">Bienvenue ${data.firstName} ${data.lastName} !</h2>
+            <p>Votre compte client a été créé avec succès.</p>
+            <p>Nous avons commencé à travailler sur votre demande de devis. Vous recevrez une notification dès qu'il sera prêt.</p>
+            <div style="margin: 30px 0; padding: 20px; background-color: #f5f5f5; border-radius: 8px;">
+              <p style="margin: 0;"><strong>Numéro de devis :</strong> ${data.quoteId || 'En cours de génération'}</p>
+              ${data.projectId ? `<p style="margin: 10px 0 0;"><strong>Projet associé :</strong> ${data.projectId}</p>` : ''}
+            </div>
+            <p>Pour suivre l'avancement de votre demande, vous pourrez accéder à votre espace client prochainement.</p>
+            <p style="margin-top: 30px; color: #666; font-size: 12px;">
+              Si vous avez des questions, n'hésitez pas à nous contacter.
+            </p>
+            <p style="color: #666; font-size: 12px;">
+              L'équipe VisionCRM
+            </p>
+          </div>
+        </body>
+      </html>
+    `,
+  },
+  QUOTE_READY: {
+    subject: (data: any) => `Votre devis #${data.quoteNumber} est prêt`,
+    body: (data: any) => `
+      <html>
+        <body style="font-family: Arial, sans-serif;">
+          <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+            <h2 style="color: #f68100;">Votre devis est prêt !</h2>
+            <p>Bonjour ${data.firstName},</p>
+            <p>Votre devis #${data.quoteNumber} est maintenant disponible.</p>
+            <a href="${data.quoteLink}" style="display: inline-block; margin: 20px 0; padding: 12px 24px; background-color: #f68100; color: white; text-decoration: none; border-radius: 6px;">
+              Voir le devis
+            </a>
+            <p>Cordialement,<br>L'équipe VisionCRM</p>
+          </div>
+        </body>
+      </html>
+    `,
+  },
+  INVOICE_SENT: {
+    subject: (data: any) => `Facture #${data.invoiceNumber}`,
+    body: (data: any) => `
+      <html>
+        <body style="font-family: Arial, sans-serif;">
+          <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+            <h2 style="color: #f68100;">Facture #${data.invoiceNumber}</h2>
+            <p>Bonjour ${data.firstName},</p>
+            <p>Veuillez trouver ci-joint votre facture #${data.invoiceNumber}.</p>
+            <p>Montant : <strong>${data.amount}€</strong></p>
+            <p>Cordialement,<br>L'équipe VisionCRM</p>
+          </div>
+        </body>
+      </html>
+    `,
+  },
+  APPOINTMENT_REMINDER: {
+    subject: (data: any) => `Rappel de rendez-vous`,
+    body: (data: any) => `
+      <html>
+        <body style="font-family: Arial, sans-serif;">
+          <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+            <h2 style="color: #f68100;">Rappel de rendez-vous</h2>
+            <p>Bonjour ${data.firstName},</p>
+            <p>Ce message pour vous rappeler votre rendez-vous du ${data.appointmentDate} à ${data.appointmentTime}.</p>
+            <p>Cordialement,<br>L'équipe VisionCRM</p>
+          </div>
+        </body>
+      </html>
+    `,
+  },
+  CUSTOM: {
+    subject: (data: any) => data.subject || 'Message de VisionCRM',
+    body: (data: any) => data.body || '',
+  },
+};
+
+export async function POST(req: NextRequest) {
+  try {
+    const session = await auth();
+
+    if (!session || !(session.user as any).tenantId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const body = await req.json();
+    const data = sendEmailSchema.parse(body);
+
+    // Get template
+    const template = EMAIL_TEMPLATES[data.template];
+    if (!template) {
+      return NextResponse.json({ error: 'Invalid template' }, { status: 400 });
+    }
+
+    const emailSubject = data.subject || template.subject(data.data || {});
+    const emailBody = data.body || template.body(data.data || {});
+
+    // In production, you would use a service like SendGrid, AWS SES, or Resend
+    // For now, we'll simulate sending and log to console
+    console.log('📧 Sending email:', {
+      to: data.to,
+      subject: emailSubject,
+      template: data.template,
+    });
+
+    // Save to database for tracking
+    const emailLog = await prisma.emailLog.create({
+      data: {
+        tenant_id: (session.user as any).tenantId,
+        to: data.to,
+        subject: emailSubject,
+        body: emailBody,
+        template: data.template,
+        status: 'SENT',
+        sent_by: session.user.id,
+      },
+    });
+
+    return NextResponse.json({
+      success: true,
+      messageId: emailLog.id,
+      message: 'Email envoyé avec succès',
+    });
+  } catch (error) {
+    console.error('Error sending email:', error);
+
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: 'Invalid data', details: error.errors },
+        { status: 400 }
+      );
+    }
+
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function GET(req: NextRequest) {
+  try {
+    const session = await auth();
+
+    if (!session || !(session.user as any).tenantId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const { searchParams } = new URL(req.url);
+    const status = searchParams.get('status');
+    const limit = parseInt(searchParams.get('limit') || '50');
+
+    const emails = await prisma.emailLog.findMany({
+      where: {
+        tenant_id: (session.user as any).tenantId,
+        ...(status && { status: status as any }),
+      },
+      orderBy: {
+        created_at: 'desc',
+      },
+      take: limit,
+    });
+
+    return NextResponse.json(emails);
+  } catch (error) {
+    console.error('Error fetching email logs:', error);
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
+  }
+}

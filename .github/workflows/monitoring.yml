@@ -1,0 +1,46 @@
+name: Monitoring and Alerts
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'  # Toutes les 5 minutes
+  workflow_dispatch:
+
+jobs:
+  health-check:
+    name: Health Check
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        environment: [staging, production]
+    
+    steps:
+    - name: Check application health
+      run: |
+        if [ "${{ matrix.environment }}" == "staging" ]; then
+          URL="https://staging.visioncrm.example.com"
+        else
+          URL="https://visioncrm.example.com"
+        fi
+        
+        # Test de base
+        if ! curl -f "$URL/health" > /dev/null 2>&1; then
+          echo "❌ Health check failed for ${{ matrix.environment }}"
+          exit 1
+        fi
+        
+        # Test de performance
+        RESPONSE_TIME=$(curl -o /dev/null -s -w '%{time_total}' "$URL")
+        if (( $(echo "$RESPONSE_TIME > 2.0" | bc -l) )); then
+          echo "⚠️  Slow response time: ${RESPONSE_TIME}s for ${{ matrix.environment }}"
+        fi
+        
+        echo "✅ ${{ matrix.environment }} is healthy (${RESPONSE_TIME}s)"
+
+    - name: Notify on failure
+      if: failure()
+      uses: 8398a7/action-slack@v3
+      with:
+        status: failure
+        text: "🚨 Health check failed for ${{ matrix.environment }} environment"
+        webhook_url: ${{ secrets.SLACK_WEBHOOK }}

@@ -1,16 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { requireTenantId } from '@/lib/tenant';
+import { auth } from '@/auth';
 import { prisma } from '@/lib/prisma';
 
-// Utility function to get current tenant ID
-async function getCurrentTenantId(): Promise<string> {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.tenantId) {
-    throw new Error('No tenant ID found in session');
-  }
-  return session.user.tenantId;
-}
 
 /**
  * GET /api/accounting/documents
@@ -20,7 +12,7 @@ async function getCurrentTenantId(): Promise<string> {
  */
 export async function GET(req: NextRequest) {
   try {
-    const tenantId = await getCurrentTenantId();
+    const tenantId = await requireTenantId();
     const { searchParams } = new URL(req.url);
 
     const type = searchParams.get('type');
@@ -57,7 +49,7 @@ export async function GET(req: NextRequest) {
       ...payrollDocs.map(doc => ({
         ...doc,
         category: 'PAYROLL' as const,
-        document_type: doc.type,
+        document_type: 'PAYROLL_DOCUMENT',
       })),
       ...legalDocs.map(doc => ({
         ...doc,

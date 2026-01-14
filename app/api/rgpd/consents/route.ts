@@ -1,0 +1,120 @@
+import { NextResponse } from 'next/server';
+import { auth } from '@/auth';
+import { prisma } from '@/lib/prisma';
+import { z } from 'zod';
+
+const consentUpdateSchema = z.object({
+  consent_type: z.enum(['MARKETING_EMAIL', 'MARKETING_SMS', 'DATA_PROCESSING', 'ANALYTICS', 'THIRD_PARTY_SHARING']),
+  is_granted: z.boolean(),
+});
+
+/**
+ * GET /api/rgpd/consents
+ * Get user's consents
+ */
+export async function GET(req: Request) {
+  try {
+    const session = await auth();
+
+    if (!session?.user?.id) {
+      return NextResponse.json(
+        { error: 'Non authentifié' },
+        { status: 401 }
+      );
+    }
+
+    const consents = await prisma.userConsent.findMany({
+      where: {
+        user_id: session.user.id,
+      },
+      orderBy: {
+        consent_type: 'asc',
+      },
+    });
+
+    // Return all consent types with their status
+    const consentTypes = ['MARKETING_EMAIL', 'MARKETING_SMS', 'DATA_PROCESSING', 'ANALYTICS', 'THIRD_PARTY_SHARING'] as const;
+    const consentMap = new Map(consents.map(c => [c.consent_type, c]));
+
+    const allConsents = consentTypes.map(type => {
+      const existing = consentMap.get(type as any);
+      return {
+        consent_type: type,
+        is_granted: existing?.is_granted || false,
+        granted_at: existing?.granted_at,
+        updated_at: existing?.updated_at,
+        revoked_at: existing?.revoked_at,
+      };
+    });
+
+    return NextResponse.json({ consents: allConsents });
+  } catch (error) {
+    console.error('Get consents error:', error);
+    return NextResponse.json(
+      { error: 'Erreur lors de la récupération des consentements' },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * PATCH /api/rgpd/consents
+ * Update user's consent
+ */
+export async function PATCH(req: Request) {
+  try {
+    const session = await auth();
+
+    if (!session?.user?.id) {
+      return NextResponse.json(
+        { error: 'Non authentifié' },
+        { status: 401 }
+      );
+    }
+
+    const body = await req.json();
+    const data = consentUpdateSchema.parse(body);
+
+    // Get user agent and IP
+    const userAgent = req.headers.get('user-agent') || undefined;
+    const ip = req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || undefined;
+
+    // Upsert consent
+    const consent = await prisma.userConsent.upsert({
+      where: {
+        user_id_consent_type: {
+          user_id: session.user.id,
+          consent_type: data.consent_type,
+        },
+      },
+      update: {
+        is_granted: data.is_granted,
+        revoked_at: data.is_granted ? null : new Date(),
+        ip_address: ip,
+        user_agent: userAgent,
+      },
+      create: {
+        user_id: session.user.id,
+        consent_type: data.consent_type,
+        is_granted: data.is_granted,
+        ip_address: ip,
+        user_agent: userAgent,
+      },
+    });
+
+    return NextResponse.json(consent);
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: 'Données invalides', details: error.errors },
+        { status: 400 }
+      );
+    }
+
+    console.error('Update consent error:', error);
+    return NextResponse.json(
+      { error: 'Erreur lors de la mise à jour du consentement' },
+      { status: 500 }
+    );
+  }
+}

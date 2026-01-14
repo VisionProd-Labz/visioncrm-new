@@ -1,0 +1,170 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
+import { getCurrentTenantId } from '@/lib/tenant';
+import { auth } from '@/auth';
+import { bankReconciliationSchema } from '@/lib/accounting/validations';
+import { z } from 'zod';
+
+/**
+ * GET /api/accounting/reconciliation
+ * Get bank reconciliations
+ */
+export async function GET(req: NextRequest) {
+  try {
+    const tenantId = await getCurrentTenantId();
+    if (!tenantId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const { searchParams } = new URL(req.url);
+    const accountId = searchParams.get('account_id');
+    const status = searchParams.get('status');
+
+    const where: any = {
+      tenant_id: tenantId,
+    };
+
+    if (accountId) where.account_id = accountId;
+    if (status) where.status = status;
+
+    const reconciliations = await prisma.bankReconciliation.findMany({
+      where,
+      include: {
+        account: {
+          select: {
+            account_name: true,
+            bank_name: true,
+            account_number: true,
+          },
+        },
+      },
+      orderBy: { reconciliation_date: 'desc' },
+    });
+
+    return NextResponse.json({ reconciliations });
+  } catch (error) {
+    console.error('Error fetching reconciliations:', error);
+    return NextResponse.json(
+      { error: 'Failed to fetch reconciliations' },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * POST /api/accounting/reconciliation
+ * Create a new bank reconciliation
+ */
+export async function POST(req: NextRequest) {
+  try {
+    const tenantId = await getCurrentTenantId();
+    if (!tenantId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const session = await auth();
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const body = await req.json();
+    const data = bankReconciliationSchema.parse(body);
+
+    // Verify account belongs to tenant
+    const account = await prisma.bankAccount.findFirst({
+      where: {
+        id: data.account_id,
+        tenant_id: tenantId,
+        deleted_at: null,
+      },
+    });
+
+    if (!account) {
+      return NextResponse.json(
+        { error: 'Compte bancaire introuvable' },
+        { status: 404 }
+      );
+    }
+
+    // Calculate system balance from pending transactions
+    const transactions = await prisma.bankTransaction.findMany({
+      where: {
+        tenant_id: tenantId,
+        account_id: data.account_id,
+        status: 'PENDING',
+        date: {
+          lte: new Date(data.reconciliation_date),
+        },
+      },
+    });
+
+    const systemBalance = transactions.reduce((sum, t) => {
+      return sum + (t.type === 'CREDIT' ? Number(t.amount) : -Number(t.amount));
+    }, Number(account.balance));
+
+    const difference = data.statement_balance - systemBalance;
+    const status = Math.abs(difference) < 0.01 ? 'COMPLETED' : 'NEEDS_REVIEW';
+
+    const reconciliation = await prisma.bankReconciliation.create({
+      data: {
+        tenant_id: tenantId,
+        account_id: data.account_id,
+        reconciliation_date: new Date(data.reconciliation_date),
+        statement_balance: data.statement_balance,
+        system_balance: systemBalance,
+        difference,
+        status,
+        notes: data.notes,
+        document_url: data.document_url,
+        reconciled_by: session.user.id,
+        completed_at: status === 'COMPLETED' ? new Date() : null,
+      },
+      include: {
+        account: {
+          select: {
+            account_name: true,
+            bank_name: true,
+          },
+        },
+      },
+    });
+
+    // If reconciliation is completed, mark all pending transactions as reconciled
+    if (status === 'COMPLETED') {
+      await prisma.bankTransaction.updateMany({
+        where: {
+          tenant_id: tenantId,
+          account_id: data.account_id,
+          status: 'PENDING',
+          date: {
+            lte: new Date(data.reconciliation_date),
+          },
+        },
+        data: {
+          status: 'RECONCILED',
+          reconciled_at: new Date(),
+        },
+      });
+
+      // Update account last reconciled date
+      await prisma.bankAccount.update({
+        where: { id: data.account_id },
+        data: { last_reconciled_at: new Date() },
+      });
+    }
+
+    return NextResponse.json(reconciliation, { status: 201 });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: 'Données invalides', details: error.errors },
+        { status: 400 }
+      );
+    }
+    console.error('Error creating reconciliation:', error);
+    return NextResponse.json(
+      { error: 'Failed to create reconciliation' },
+      { status: 500 }
+    );
+  }
+}

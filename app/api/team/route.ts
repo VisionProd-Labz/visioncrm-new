@@ -1,19 +1,18 @@
 import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { auth } from '@/auth';
 import { prisma } from '@/lib/prisma';
-import { getCurrentTenantId } from '@/lib/tenant';
+import { getCurrentTenantId, requireTenantId } from '@/lib/tenant';
 
 // GET /api/team - List team members
 export async function GET(req: Request) {
   try {
-    const session = await getServerSession(authOptions);
+    const session = await auth();
 
     if (!session?.user) {
       return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
     }
 
-    const tenantId = await getCurrentTenantId();
+    const tenantId = await requireTenantId();
 
     if (!tenantId) {
       return NextResponse.json({ error: 'Tenant non trouvé' }, { status: 404 });

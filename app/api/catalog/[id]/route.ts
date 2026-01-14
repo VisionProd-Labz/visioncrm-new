@@ -1,7 +1,16 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getCurrentTenantId } from '@/lib/tenant';
+import { getCurrentTenantId, requireTenantId } from '@/lib/tenant';
 import { z } from 'zod';
+
+// Helper to get tenant ID or return 401
+async function getTenantIdOrFail() {
+  const tenantId = await requireTenantId();
+  if (!tenantId) {
+    throw new Error('UNAUTHORIZED');
+  }
+  return tenantId;
+}
 
 const updateSchema = z.object({
   name: z.string().min(1).max(255).optional(),
@@ -27,7 +36,7 @@ export async function GET(
   const { id } = await params;
 
   try {
-    const tenantId = await getCurrentTenantId();
+    const tenantId = await getTenantIdOrFail();
 
     const item = await prisma.catalogItem.findFirst({
       where: {
@@ -65,7 +74,7 @@ export async function PATCH(
   const { id } = await params;
 
   try {
-    const tenantId = await getCurrentTenantId();
+    const tenantId = await getTenantIdOrFail();
     const body = await req.json();
 
     // Validate input
@@ -140,7 +149,7 @@ export async function DELETE(
   const { id } = await params;
 
   try {
-    const tenantId = await getCurrentTenantId();
+    const tenantId = await getTenantIdOrFail();
 
     // Check item exists
     const existing = await prisma.catalogItem.findFirst({
