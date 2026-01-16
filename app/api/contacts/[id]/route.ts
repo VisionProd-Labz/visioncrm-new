@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { getCurrentTenantId, requireTenantId } from '@/lib/tenant';
 import { contactSchema } from '@/lib/validations';
 import { z } from 'zod';
+import { requirePermission } from '@/lib/middleware/require-permission';
 
 /**
  * GET /api/contacts/:id
@@ -13,6 +14,10 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+
+  // ✅ SECURITY: Check permission FIRST
+  const permError = await requirePermission('view_contacts');
+  if (permError) return permError;
 
   try {
     const tenantId = await requireTenantId();
@@ -83,6 +88,10 @@ export async function PATCH(
 ) {
   const { id } = await params;
 
+  // ✅ SECURITY: Check permission FIRST
+  const permError = await requirePermission('edit_contacts');
+  if (permError) return permError;
+
   try {
     const tenantId = await requireTenantId();
     const body = await req.json();
@@ -138,6 +147,10 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+
+  // ✅ SECURITY: Check permission FIRST
+  const permError = await requirePermission('delete_contacts');
+  if (permError) return permError;
 
   try {
     const tenantId = await requireTenantId();

@@ -2,31 +2,24 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { prisma } from '@/lib/prisma';
 import { getTenantAccessLogs } from '@/lib/access-log';
+import { requirePermission } from '@/lib/middleware/require-permission';
 
 /**
  * GET /api/admin/audit-logs
  * Get access logs for audit purposes (admin only)
+ * ✅ SECURITY FIX #3: Permission check added
  */
 export async function GET(req: Request) {
   try {
-    const session = await auth();
+    // ✅ Check permission FIRST
+    const permError = await requirePermission('edit_settings');
+    if (permError) return permError;
 
+    const session = await auth();
     if (!session?.user?.id) {
       return NextResponse.json(
         { error: 'Non authentifié' },
         { status: 401 }
-      );
-    }
-
-    // Check if user is admin (OWNER, MANAGER, or SUPER_ADMIN)
-    const user = await prisma.user.findUnique({
-      where: { id: session.user.id },
-    });
-
-    if (!user || !['OWNER', 'MANAGER', 'SUPER_ADMIN'].includes(user.role)) {
-      return NextResponse.json(
-        { error: 'Accès non autorisé' },
-        { status: 403 }
       );
     }
 

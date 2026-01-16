@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { requirePermission } from '@/lib/middleware/require-permission';
 import { prisma } from '@/lib/prisma';
 import { getCurrentTenantId, requireTenantId } from '@/lib/tenant';
 import { z } from 'zod';
@@ -24,6 +25,10 @@ const accountSchema = z.object({
  */
 export async function GET(req: Request) {
   try {
+    // ✅ SECURITY FIX #3: Permission check
+    const permError = await requirePermission('view_emails');
+    if (permError) return permError;
+
     const tenantId = await requireTenantId();
 
     const accounts = await prisma.emailAccount.findMany({

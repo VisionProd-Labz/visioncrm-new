@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { requirePermission } from '@/lib/middleware/require-permission';
 import { prisma } from '@/lib/prisma';
 import { getCurrentTenantId, requireTenantId } from '@/lib/tenant';
 import { z } from 'zod';

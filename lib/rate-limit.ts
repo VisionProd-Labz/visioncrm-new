@@ -1,15 +1,28 @@
-// Redis import disabled for MVP - install @upstash/redis to enable
-// import { Redis } from '@upstash/redis';
+// ✅ SECURITY FIX #2: Rate Limiting avec Redis (Upstash)
+import { Redis } from '@upstash/redis';
 
-// Initialize Redis client (will use env vars)
-// For MVP: Redis disabled, rate limiting will use in-memory fallback
-const redis: any = null;
-// const redis = process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN
-//   ? new Redis({
-//       url: process.env.UPSTASH_REDIS_REST_URL,
-//       token: process.env.UPSTASH_REDIS_REST_TOKEN,
-//     })
-//   : null;
+/**
+ * Initialize Redis client for rate limiting
+ * CRITICAL: Redis is REQUIRED in production for security
+ */
+const redis =
+  process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN
+    ? new Redis({
+        url: process.env.UPSTASH_REDIS_REST_URL,
+        token: process.env.UPSTASH_REDIS_REST_TOKEN,
+      })
+    : null;
+
+// 🔴 SECURITY CHECK: Block production deployment without Redis
+if (!redis && process.env.NODE_ENV === 'production') {
+  console.error('🔴 CRITICAL SECURITY ERROR: Redis rate limiting is REQUIRED in production');
+  console.error('Please configure UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN');
+  console.error('Get free Redis at: https://upstash.com');
+  throw new Error(
+    'CRITICAL: Redis rate limiting must be configured in production environment. ' +
+      'Set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN environment variables.'
+  );
+}
 
 /**
  * Rate limit configuration
@@ -45,9 +58,11 @@ export async function checkRateLimit(
   identifier: string,
   type: keyof typeof RATE_LIMITS = 'ai_chat'
 ): Promise<{ allowed: boolean; remaining: number; resetAt: Date }> {
-  // If Redis is not configured, allow all requests (dev mode)
+  // If Redis is not configured (development only - production will throw error at startup)
   if (!redis) {
-    console.warn('Redis not configured - rate limiting disabled');
+    if (process.env.NODE_ENV === 'development') {
+      console.warn('⚠️  [DEV] Redis not configured - rate limiting disabled in development');
+    }
     return {
       allowed: true,
       remaining: 999,

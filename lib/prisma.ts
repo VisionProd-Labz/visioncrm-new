@@ -24,8 +24,10 @@ export async function setupTenantMiddleware(tenantId: string) {
     query: {
       $allModels: {
         async $allOperations({ operation, model, args, query }) {
-          // Skip for models without tenant_id (like Tenant itself)
+          // Skip for models without tenant_id (like Tenant itself, Account, Session, etc.)
+          // ✅ SECURITY FIX: Complete list of ALL models with tenant_id
           const modelsWithTenant = [
+            // Core CRM (10 - previously protected)
             'User',
             'Contact',
             'Vehicle',
@@ -36,6 +38,45 @@ export async function setupTenantMiddleware(tenantId: string) {
             'AIUsage',
             'Webhook',
             'AuditLog',
+
+            // 🔴 CRITICAL: Financial data (previously UNPROTECTED)
+            'BankAccount',        // Coordonnées bancaires
+            'BankTransaction',    // Transactions financières
+            'BankReconciliation', // Rapprochements
+            'Expense',            // Dépenses
+            'PaymentTerm',        // Conditions paiement
+            'CustomPaymentMethod',// Moyens paiement
+
+            // 🔴 CRITICAL: Documents sensibles (previously UNPROTECTED)
+            'Document',           // Documents uploadés
+            'TaxDocument',        // Documents fiscaux
+            'PayrollDocument',    // Documents paie
+            'LegalDocument',      // Documents juridiques
+            'FinancialReport',    // Rapports financiers
+
+            // 🟡 HIGH: Communication (previously UNPROTECTED)
+            'EmailLog',           // Historique emails
+            'EmailTemplate',      // Templates emails
+            'EmailAccount',       // Comptes email
+            'Email',              // Emails
+            'Conversation',       // Conversations
+            'Message',            // Messages
+
+            // 🟡 HIGH: Business data (previously UNPROTECTED)
+            'Project',            // Projets
+            'CatalogItem',        // Articles catalogue
+            'VatRate',            // Taux TVA
+            'Event',              // Événements
+            'ServiceRecord',      // Enregistrements service
+            'InventoryItem',      // Inventaire
+            'Litigation',         // Litiges
+
+            // 🟢 MEDIUM: Admin (previously UNPROTECTED)
+            'TeamInvitation',     // Invitations équipe
+            'TaskCategory',       // Catégories tâches
+            'DsarRequest',        // Demandes RGPD (tenant_id nullable)
+            'AccessLog',          // Logs accès
+            'DataRetentionPolicy',// Politiques rétention
           ];
 
           if (!modelsWithTenant.includes(model ?? '')) {

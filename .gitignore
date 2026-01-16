@@ -72,3 +72,4 @@ update-demo-password.sql
 
 .vercel
 .env*.local
+nul

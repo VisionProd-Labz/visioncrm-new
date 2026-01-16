@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { prisma } from '@/lib/prisma';
 import { z } from 'zod';
+import { requirePermission } from '@/lib/middleware/require-permission';
 
 const ContactSchema = z.object({
   first_name: z.string().min(1),
@@ -20,6 +21,10 @@ const ContactSchema = z.object({
 
 export async function POST(request: NextRequest) {
   try {
+    // ✅ SECURITY FIX #3: Permission check
+    const permError = await requirePermission('create_contacts');
+    if (permError) return permError;
+
     const session = await auth();
 
     if (!session?.user?.email) {

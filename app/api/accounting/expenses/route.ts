@@ -4,6 +4,7 @@ import { getCurrentTenantId, requireTenantId } from '@/lib/tenant';
 import { auth } from '@/auth';
 import { expenseSchema } from '@/lib/accounting/validations';
 import { z } from 'zod';
+import { requirePermission } from '@/lib/middleware/require-permission';
 
 /**
  * GET /api/accounting/expenses
@@ -11,6 +12,10 @@ import { z } from 'zod';
  */
 export async function GET(req: NextRequest) {
   try {
+    // ✅ SECURITY FIX #3: Permission check
+    const permError = await requirePermission('view_expenses');
+    if (permError) return permError;
+
     const tenantId = await requireTenantId();
     if (!tenantId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

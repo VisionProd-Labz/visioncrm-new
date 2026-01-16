@@ -18,11 +18,15 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         password: { label: 'Password', type: 'password' },
       },
       async authorize(credentials): Promise<User | null> {
-        console.log('🔑 [AUTHORIZE V5] ========== CALLED ==========');
-        console.log('🔑 [AUTHORIZE V5] Email:', credentials?.email);
+        // ✅ SECURITY FIX #4: Remove sensitive logs in production
+        if (process.env.NODE_ENV === 'development') {
+          console.log('🔑 [AUTHORIZE] Login attempt');
+        }
 
         if (!credentials?.email || !credentials?.password) {
-          console.log('🔑 [AUTHORIZE V5] Missing credentials');
+          if (process.env.NODE_ENV === 'development') {
+            console.log('🔑 [AUTHORIZE] Missing credentials');
+          }
           return null;
         }
 
@@ -35,30 +39,36 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             include: { tenant: true },
           });
 
-          console.log('🔑 [AUTHORIZE V5] User found:', !!user);
-
+          // ✅ SECURITY: Never reveal if user exists or not
           if (!user || !user.password) {
-            console.log('🔑 [AUTHORIZE V5] User not found or no password');
+            if (process.env.NODE_ENV === 'development') {
+              console.log('🔑 [AUTHORIZE] Authentication failed: user not found or no password');
+            }
             return null;
           }
 
           const isPasswordValid = await bcrypt.compare(password, user.password);
 
-          console.log('🔑 [AUTHORIZE V5] Password valid:', isPasswordValid);
-
+          // ✅ SECURITY: Never log password validation result
           if (!isPasswordValid) {
-            console.log('🔑 [AUTHORIZE V5] Invalid password');
+            if (process.env.NODE_ENV === 'development') {
+              console.log('🔑 [AUTHORIZE] Authentication failed: invalid password');
+            }
             return null;
           }
 
           // Check if tenant is active
           if (user.tenant?.deleted_at) {
-            console.log('🔑 [AUTHORIZE V5] Tenant deleted');
+            if (process.env.NODE_ENV === 'development') {
+              console.log('🔑 [AUTHORIZE] Authentication failed: tenant deleted');
+            }
             return null;
           }
 
           if (!user.tenantId) {
-            console.log('🔑 [AUTHORIZE V5] No tenantId');
+            if (process.env.NODE_ENV === 'development') {
+              console.log('🔑 [AUTHORIZE] Authentication failed: no tenantId');
+            }
             return null;
           }
 
@@ -71,16 +81,23 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             role: user.role,
           };
 
-          console.log('🔑 [AUTHORIZE V5] Returning user:', {
-            id: userObject.id,
-            email: userObject.email,
-            tenantId: userObject.tenantId,
-            role: userObject.role,
-          });
+          // ✅ SECURITY: Only log in development, without email
+          if (process.env.NODE_ENV === 'development') {
+            console.log('🔑 [AUTHORIZE] Authentication successful:', {
+              userId: userObject.id,
+              tenantId: userObject.tenantId,
+              role: userObject.role,
+            });
+          }
 
           return userObject as User;
         } catch (error) {
-          console.error('🔑 [AUTHORIZE V5] Error:', error);
+          // ✅ SECURITY: Never log detailed error in production
+          if (process.env.NODE_ENV === 'development') {
+            console.error('🔑 [AUTHORIZE] Error:', error);
+          } else {
+            console.error('🔑 [AUTHORIZE] Authentication error');
+          }
           return null;
         }
       },
@@ -112,30 +129,28 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   },
   callbacks: {
     async jwt({ token, user, trigger, session }) {
-      console.log('[JWT Callback V5] Called with:', {
-        hasUser: !!user,
-        trigger,
-        tokenBefore: { id: token.id, tenantId: token.tenantId, role: token.role },
-      });
+      // ✅ SECURITY: Only log in development, without email
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[JWT Callback] Called with:', {
+          hasUser: !!user,
+          trigger,
+          hasToken: !!(token.id && token.tenantId),
+        });
+      }
 
       // On first sign in
       if (user) {
-        console.log('[JWT Callback V5] User object:', {
-          id: user.id,
-          email: user.email,
-          tenantId: (user as any).tenantId,
-          role: (user as any).role,
-        });
+        if (process.env.NODE_ENV === 'development') {
+          console.log('[JWT Callback] Setting token from user:', {
+            userId: user.id,
+            tenantId: (user as any).tenantId,
+            role: (user as any).role,
+          });
+        }
 
         token.id = user.id;
         token.tenantId = (user as any).tenantId;
         token.role = (user as any).role;
-
-        console.log('[JWT Callback V5] Token after user:', {
-          id: token.id,
-          tenantId: token.tenantId,
-          role: token.role,
-        });
       }
 
       // Update token if session is updated
@@ -143,33 +158,21 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         token = { ...token, ...session };
       }
 
-      console.log('[JWT Callback V5] Returning token:', {
-        id: token.id,
-        tenantId: token.tenantId,
-        role: token.role,
-        hasAllFields: !!(token.id && token.tenantId && token.role),
-      });
-
       return token;
     },
     async session({ session, token }) {
-      console.log('[Session Callback V5] Token received:', {
-        id: token.id,
-        tenantId: token.tenantId,
-        role: token.role,
-      });
+      // ✅ SECURITY: Only log in development
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[Session Callback] Creating session from token:', {
+          hasToken: !!(token.id && token.tenantId),
+        });
+      }
 
       if (session.user) {
         session.user.id = token.id as string;
         (session.user as any).tenantId = token.tenantId as string;
         (session.user as any).role = token.role as string;
       }
-
-      console.log('[Session Callback V5] Returning session:', {
-        userId: session.user?.id,
-        tenantId: (session.user as any)?.tenantId,
-        role: (session.user as any)?.role,
-      });
 
       return session;
     },

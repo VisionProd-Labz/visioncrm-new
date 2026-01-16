@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { prisma } from '@/lib/prisma';
 import { z } from 'zod';
+import { requirePermission } from '@/lib/middleware/require-permission';
 
 const createProjectSchema = z.object({
   name: z.string().min(1),
@@ -62,6 +63,10 @@ export async function POST(req: NextRequest) {
 
 export async function GET(req: NextRequest) {
   try {
+    // ✅ SECURITY FIX #3: Permission check
+    const permError = await requirePermission('view_tasks');
+    if (permError) return permError;
+
     const session = await auth();
 
     if (!session?.user || !(session.user as any).tenantId) {

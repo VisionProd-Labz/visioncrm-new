@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { requireTenantId } from '@/lib/tenant';
 import { litigationSchema } from '@/lib/accounting/validations';
 import { z } from 'zod';
+import { requirePermission } from '@/lib/middleware/require-permission';
 
 // Utility function to get current tenant ID
 
@@ -13,6 +14,10 @@ import { z } from 'zod';
  */
 export async function GET(req: NextRequest) {
   try {
+    // ✅ SECURITY FIX #3: Permission check
+    const permError = await requirePermission('view_litigation');
+    if (permError) return permError;
+
     const tenantId = await requireTenantId();
     const { searchParams } = new URL(req.url);
 

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { requirePermission } from '@/lib/middleware/require-permission';
 import { auth } from '@/auth';
 import { prisma } from '@/lib/prisma';
 import { z } from 'zod';
@@ -15,6 +16,10 @@ const policySchema = z.object({
  */
 export async function GET(req: Request) {
   try {
+    // ✅ SECURITY FIX #3: Permission check
+    const permError = await requirePermission('edit_settings');
+    if (permError) return permError;
+
     const session = await auth();
 
     if (!session?.user?.id) {

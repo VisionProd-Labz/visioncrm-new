@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { getCurrentTenantId, requireTenantId } from '@/lib/tenant';
 import { bankAccountSchema } from '@/lib/accounting/validations';
 import { z } from 'zod';
+import { requirePermission } from '@/lib/middleware/require-permission';
 
 /**
  * GET /api/accounting/bank-accounts
@@ -10,6 +11,10 @@ import { z } from 'zod';
  */
 export async function GET(req: NextRequest) {
   try {
+    // ✅ SECURITY FIX #3: Permission check
+    const permError = await requirePermission('view_bank_accounts');
+    if (permError) return permError;
+
     const tenantId = await requireTenantId();
     if (!tenantId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { prisma } from '@/lib/prisma';
 import { requireTenantId } from '@/lib/tenant';
+import { requirePermission } from '@/lib/middleware/require-permission';
 
 // Utility function to get current tenant ID
 
@@ -11,6 +12,10 @@ import { requireTenantId } from '@/lib/tenant';
  */
 export async function GET(req: NextRequest) {
   try {
+    // ✅ SECURITY FIX #3: Permission check
+    const permError = await requirePermission('view_financial_reports');
+    if (permError) return permError;
+
     const tenantId = await requireTenantId();
     const { searchParams } = new URL(req.url);
 

@@ -4,6 +4,7 @@ import { auth } from '@/auth';
 import { prisma } from '@/lib/prisma';
 import { taxDocumentSchema } from '@/lib/accounting/validations';
 import { z } from 'zod';
+import { requirePermission } from '@/lib/middleware/require-permission';
 
 
 /**
@@ -12,6 +13,10 @@ import { z } from 'zod';
  */
 export async function GET(req: NextRequest) {
   try {
+    // ✅ SECURITY FIX #3: Permission check
+    const permError = await requirePermission('view_tax_documents');
+    if (permError) return permError;
+
     const tenantId = await requireTenantId();
     const { searchParams } = new URL(req.url);
 

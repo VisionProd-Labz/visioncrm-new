@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { requirePermission } from '@/lib/middleware/require-permission';
 import { prisma } from '@/lib/prisma';
 import { getCurrentTenantId, requireTenantId } from '@/lib/tenant';
 import { vehicleSchema } from '@/lib/validations';
@@ -10,6 +11,10 @@ import { z } from 'zod';
  */
 export async function GET(req: Request) {
   try {
+    // ✅ SECURITY FIX #3: Permission check
+    const permError = await requirePermission('view_vehicles');
+    if (permError) return permError;
+
     const tenantId = await requireTenantId();
     const { searchParams } = new URL(req.url);
 

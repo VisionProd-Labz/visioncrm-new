@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { requirePermission } from '@/lib/middleware/require-permission';
 import { auth } from '@/auth';
 import { prisma } from '@/lib/prisma';
 import { getCurrentTenantId, requireTenantId } from '@/lib/tenant';
@@ -16,6 +17,10 @@ const taskCategorySchema = z.object({
 // GET /api/settings/task-categories
 export async function GET(req: Request) {
   try {
+    // ✅ SECURITY FIX #3: Permission check
+    const permError = await requirePermission('view_settings');
+    if (permError) return permError;
+
     const session = await auth();
 
     if (!session?.user) {

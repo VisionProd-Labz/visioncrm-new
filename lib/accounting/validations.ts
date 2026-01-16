@@ -1,18 +1,71 @@
 import { z } from 'zod';
+import { sanitizeText, sanitizeRichText } from '@/lib/sanitize';
+import { isValidIBAN, isValidBIC } from 'ibantools';
+
+/**
+ * ✅ SECURITY FIX #7: IBAN/BIC Validation
+ * Validates IBAN and BIC formats using ibantools library
+ */
 
 // ===================================================================
 // Bank Account Validations
 // ===================================================================
 
 export const bankAccountSchema = z.object({
-  account_name: z.string().min(1, 'Le nom du compte est requis').max(255),
-  account_number: z.string().min(1, 'Le numéro de compte est requis').max(50),
-  iban: z.string().max(34).optional().nullable(),
-  bic: z.string().max(11).optional().nullable(),
-  bank_name: z.string().min(1, 'Le nom de la banque est requis').max(255),
-  account_type: z.string().max(50).optional().default('CHECKING'),
+  account_name: z.string()
+    .transform(sanitizeText)
+    .pipe(z.string().min(1, 'Le nom du compte est requis').max(255)),
+  account_number: z.string()
+    .transform(sanitizeText)
+    .pipe(z.string().min(1, 'Le numéro de compte est requis').max(50)),
+  iban: z.string()
+    .transform(sanitizeText)
+    .pipe(
+      z.string()
+        .max(34, 'L\'IBAN ne peut pas dépasser 34 caractères')
+        .refine(
+          (val) => {
+            if (!val) return true; // Optional field
+            // Remove spaces and convert to uppercase for validation
+            const cleanedIban = val.replace(/\s/g, '').toUpperCase();
+            return isValidIBAN(cleanedIban);
+          },
+          { message: 'Format IBAN invalide' }
+        )
+    )
+    .optional()
+    .nullable(),
+  bic: z.string()
+    .transform(sanitizeText)
+    .pipe(
+      z.string()
+        .max(11, 'Le BIC ne peut pas dépasser 11 caractères')
+        .refine(
+          (val) => {
+            if (!val) return true; // Optional field
+            // Remove spaces and convert to uppercase for validation
+            const cleanedBic = val.replace(/\s/g, '').toUpperCase();
+            return isValidBIC(cleanedBic);
+          },
+          { message: 'Format BIC invalide' }
+        )
+    )
+    .optional()
+    .nullable(),
+  bank_name: z.string()
+    .transform(sanitizeText)
+    .pipe(z.string().min(1, 'Le nom de la banque est requis').max(255)),
+  account_type: z.string()
+    .transform(sanitizeText)
+    .pipe(z.string().max(50))
+    .optional()
+    .default('CHECKING'),
   balance: z.number().optional().default(0),
-  currency: z.string().length(3).optional().default('EUR'),
+  currency: z.string()
+    .transform(sanitizeText)
+    .pipe(z.string().length(3))
+    .optional()
+    .default('EUR'),
   is_active: z.boolean().optional().default(true),
 });
 
@@ -23,15 +76,35 @@ export type BankAccountFormData = z.infer<typeof bankAccountSchema>;
 // ===================================================================
 
 export const bankTransactionSchema = z.object({
-  account_id: z.string().uuid('ID de compte invalide'),
+  account_id: z.string()
+    .transform(sanitizeText)
+    .pipe(z.string().uuid('ID de compte invalide')),
   date: z.string().or(z.date()),
   amount: z.number().positive('Le montant doit être positif'),
   type: z.enum(['DEBIT', 'CREDIT']),
-  description: z.string().min(1, 'La description est requise').max(500),
-  reference: z.string().max(100).optional().nullable(),
-  category: z.string().max(100).optional().nullable(),
-  linked_invoice_id: z.string().uuid().optional().nullable(),
-  linked_expense_id: z.string().uuid().optional().nullable(),
+  description: z.string()
+    .transform(sanitizeRichText)
+    .pipe(z.string().min(1, 'La description est requise').max(500)),
+  reference: z.string()
+    .transform(sanitizeText)
+    .pipe(z.string().max(100))
+    .optional()
+    .nullable(),
+  category: z.string()
+    .transform(sanitizeText)
+    .pipe(z.string().max(100))
+    .optional()
+    .nullable(),
+  linked_invoice_id: z.string()
+    .transform(sanitizeText)
+    .pipe(z.string().uuid())
+    .optional()
+    .nullable(),
+  linked_expense_id: z.string()
+    .transform(sanitizeText)
+    .pipe(z.string().uuid())
+    .optional()
+    .nullable(),
   status: z.enum(['PENDING', 'RECONCILED', 'REJECTED']).default('PENDING'),
   metadata: z.record(z.any()).optional().nullable(),
 });
@@ -43,11 +116,20 @@ export type BankTransactionFormData = z.infer<typeof bankTransactionSchema>;
 // ===================================================================
 
 export const bankReconciliationSchema = z.object({
-  account_id: z.string().uuid('ID de compte invalide'),
+  account_id: z.string()
+    .transform(sanitizeText)
+    .pipe(z.string().uuid('ID de compte invalide')),
   reconciliation_date: z.string().or(z.date()),
   statement_balance: z.number(),
-  notes: z.string().optional().nullable(),
-  document_url: z.string().url().max(500).optional().nullable(),
+  notes: z.string()
+    .transform(sanitizeRichText)
+    .optional()
+    .nullable(),
+  document_url: z.string()
+    .transform(sanitizeText)
+    .pipe(z.string().url().max(500))
+    .optional()
+    .nullable(),
 });
 
 export type BankReconciliationFormData = z.infer<typeof bankReconciliationSchema>;
@@ -58,8 +140,14 @@ export type BankReconciliationFormData = z.infer<typeof bankReconciliationSchema
 
 export const expenseSchema = z.object({
   date: z.string().or(z.date()),
-  vendor_id: z.string().uuid().optional().nullable(),
-  vendor_name: z.string().min(1, 'Le nom du fournisseur est requis').max(255),
+  vendor_id: z.string()
+    .transform(sanitizeText)
+    .pipe(z.string().uuid())
+    .optional()
+    .nullable(),
+  vendor_name: z.string()
+    .transform(sanitizeText)
+    .pipe(z.string().min(1, 'Le nom du fournisseur est requis').max(255)),
   category: z.enum([
     'RENT',
     'UTILITIES',
@@ -80,13 +168,22 @@ export const expenseSchema = z.object({
     'INVENTORY',
     'OTHER',
   ]),
-  description: z.string().min(1, 'La description est requise').max(500),
+  description: z.string()
+    .transform(sanitizeRichText)
+    .pipe(z.string().min(1, 'La description est requise').max(500)),
   amount_ht: z.number().positive('Le montant HT doit être positif'),
   vat_rate: z.number().min(0).max(100).default(20.0),
   payment_method: z.enum(['CASH', 'CARD', 'BANK_TRANSFER', 'STRIPE', 'CHECK']).optional().nullable(),
   status: z.enum(['DRAFT', 'SUBMITTED', 'APPROVED', 'PAID', 'REJECTED']).default('DRAFT'),
-  notes: z.string().optional().nullable(),
-  receipt_url: z.string().url().max(500).optional().nullable(),
+  notes: z.string()
+    .transform(sanitizeRichText)
+    .optional()
+    .nullable(),
+  receipt_url: z.string()
+    .transform(sanitizeText)
+    .pipe(z.string().url().max(500))
+    .optional()
+    .nullable(),
   metadata: z.record(z.any()).optional().nullable(),
 }).transform((data) => {
   // Auto-calculate VAT and total
