@@ -5,6 +5,10 @@ import { bankAccountSchema } from '@/lib/accounting/validations';
 import { z } from 'zod';
 import { requirePermission } from '@/lib/middleware/require-permission';
 
+// Force dynamic rendering - no static optimization
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
 /**
  * GET /api/accounting/bank-accounts
  * Get all bank accounts for current tenant
