@@ -5,7 +5,14 @@
  * Uses isomorphic-dompurify (works in both browser and Node.js)
  */
 
-import DOMPurify from 'isomorphic-dompurify';
+// Lazy load DOMPurify to avoid build-time issues
+let DOMPurify: any = null;
+const getDOMPurify = () => {
+  if (!DOMPurify) {
+    DOMPurify = require('isomorphic-dompurify');
+  }
+  return DOMPurify;
+};
 
 /**
  * Configuration stricte pour sanitization HTML
@@ -62,7 +69,8 @@ export function sanitizeText(input: string | null | undefined): string {
   if (typeof input !== 'string') return '';
 
   // Nettoyer avec DOMPurify en mode strict
-  const cleaned = DOMPurify.sanitize(input, STRICT_CONFIG);
+  const purify = getDOMPurify();
+  const cleaned = purify.sanitize(input, STRICT_CONFIG);
 
   // Supprimer les espaces multiples
   return cleaned.replace(/\s+/g, ' ').trim();
@@ -77,7 +85,8 @@ export function sanitizeRichText(input: string | null | undefined): string {
   if (typeof input !== 'string') return '';
 
   // Nettoyer avec DOMPurify en autorisant certains tags
-  const cleaned = DOMPurify.sanitize(input, RICH_TEXT_CONFIG);
+  const purify = getDOMPurify();
+  const cleaned = purify.sanitize(input, RICH_TEXT_CONFIG);
 
   return cleaned.trim();
 }
