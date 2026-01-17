@@ -17,16 +17,8 @@ export async function POST(req: NextRequest) {
     req.headers.get('x-real-ip') ||
     'unknown';
 
-  console.log('[AUTH ROUTE] POST request received from IP:', ip);
-
-  // Apply rate limiting on ALL POST requests to /api/auth/*
-  // This covers signin, register, etc.
-  // Rate limiting is cheap with Redis, so we can afford to be broad here
-  if (true) {  // Always apply rate limiting to POST /api/auth/*
-    // ✅ SECURITY FIX #2: Rate limiting on login
-    console.log('[AUTH ROUTE] Checking rate limit for IP:', ip);
-    const rateLimitResult = await checkRateLimit(ip, 'login');
-    console.log('[AUTH ROUTE] Rate limit result:', rateLimitResult);
+  // ✅ SECURITY FIX #2: Rate limiting on login
+  const rateLimitResult = await checkRateLimit(ip, 'login');
 
     if (!rateLimitResult.allowed) {
       // Log rate limit attempt for security monitoring
@@ -57,14 +49,6 @@ export async function POST(req: NextRequest) {
           },
         }
       );
-    }
-
-    // Log successful rate limit check in development
-    if (process.env.NODE_ENV === 'development') {
-      console.log('[RATE LIMIT] Login attempt allowed', {
-        ip,
-        remaining: rateLimitResult.remaining,
-      });
     }
   }
 
