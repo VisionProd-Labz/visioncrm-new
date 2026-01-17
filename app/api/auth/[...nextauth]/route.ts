@@ -18,14 +18,10 @@ export async function POST(req: NextRequest, context: any) {
     req.ip ||
     'unknown';
 
-  // Apply rate limiting on login attempts (credentials provider)
-  // Check if this is a signin request (not callback)
-  const url = new URL(req.url);
-  const isSignIn = url.pathname.includes('/signin') ||
-                   url.searchParams.get('action') === 'signin' ||
-                   (await req.clone().text()).includes('"csrfToken"'); // Credentials signin includes CSRF token
-
-  if (isSignIn) {
+  // Apply rate limiting on ALL POST requests to /api/auth/*
+  // This covers signin, register, etc.
+  // Rate limiting is cheap with Redis, so we can afford to be broad here
+  if (true) {  // Always apply rate limiting to POST /api/auth/*
     // ✅ SECURITY FIX #2: Rate limiting on login
     const rateLimitResult = await checkRateLimit(ip, 'login');
 
