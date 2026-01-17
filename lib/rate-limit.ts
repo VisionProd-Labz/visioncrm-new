@@ -86,9 +86,16 @@ export async function checkRateLimit(
     if (count >= config.maxRequests) {
       // Get the oldest request to calculate reset time
       const oldestRequests = await redis.zrange(key, 0, 0, { withScores: true }) as any[];
-      const resetAt = oldestRequests.length > 0
-        ? new Date(Number(oldestRequests[0].score) + config.windowMs)
-        : new Date(now + config.windowMs);
+
+      // Calculate reset time (when oldest request expires from window)
+      let resetTimestamp = now + config.windowMs; // fallback: 1 minute from now
+
+      if (oldestRequests.length > 0) {
+        const oldestScore = Number(oldestRequests[0]?.score || oldestRequests[0]) || windowStart;
+        resetTimestamp = oldestScore + config.windowMs;
+      }
+
+      const resetAt = new Date(resetTimestamp);
 
       return {
         allowed: false,
