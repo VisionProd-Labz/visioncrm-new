@@ -20,36 +20,35 @@ export async function POST(req: NextRequest) {
   // ✅ SECURITY FIX #2: Rate limiting on login
   const rateLimitResult = await checkRateLimit(ip, 'login');
 
-    if (!rateLimitResult.allowed) {
-      // Log rate limit attempt for security monitoring
-      if (process.env.NODE_ENV === 'production') {
-        console.warn('[SECURITY] Rate limit exceeded for login', {
-          ip,
-          remaining: rateLimitResult.remaining,
-          resetAt: rateLimitResult.resetAt.toISOString(),
-          timestamp: new Date().toISOString(),
-        });
-      }
-
-      return NextResponse.json(
-        {
-          error: 'Too many login attempts',
-          message: `Too many login attempts. Please try again later.`,
-          resetAt: rateLimitResult.resetAt.toISOString(),
-        },
-        {
-          status: 429,
-          headers: {
-            'Retry-After': Math.ceil(
-              (rateLimitResult.resetAt.getTime() - Date.now()) / 1000
-            ).toString(),
-            'X-RateLimit-Limit': '5',
-            'X-RateLimit-Remaining': rateLimitResult.remaining.toString(),
-            'X-RateLimit-Reset': rateLimitResult.resetAt.toISOString(),
-          },
-        }
-      );
+  if (!rateLimitResult.allowed) {
+    // Log rate limit attempt for security monitoring
+    if (process.env.NODE_ENV === 'production') {
+      console.warn('[SECURITY] Rate limit exceeded for login', {
+        ip,
+        remaining: rateLimitResult.remaining,
+        resetAt: rateLimitResult.resetAt.toISOString(),
+        timestamp: new Date().toISOString(),
+      });
     }
+
+    return NextResponse.json(
+      {
+        error: 'Too many login attempts',
+        message: `Too many login attempts. Please try again later.`,
+        resetAt: rateLimitResult.resetAt.toISOString(),
+      },
+      {
+        status: 429,
+        headers: {
+          'Retry-After': Math.ceil(
+            (rateLimitResult.resetAt.getTime() - Date.now()) / 1000
+          ).toString(),
+          'X-RateLimit-Limit': '5',
+          'X-RateLimit-Remaining': rateLimitResult.remaining.toString(),
+          'X-RateLimit-Reset': rateLimitResult.resetAt.toISOString(),
+        },
+      }
+    );
   }
 
   // Call original POST handler
