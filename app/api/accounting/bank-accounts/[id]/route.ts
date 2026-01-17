@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { getCurrentTenantId, requireTenantId } from '@/lib/tenant';
 import { bankAccountSchema } from '@/lib/accounting/validations';
 import { z } from 'zod';
+import { requirePermission } from '@/lib/middleware/require-permission';
 
 // Force dynamic rendering - no static optimization
 export const dynamic = 'force-dynamic';
@@ -18,6 +19,11 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
+
+    // ✅ SECURITY FIX #3: RBAC permission check
+    const permError = await requirePermission('view_bank_accounts');
+    if (permError) return permError;
+
     const tenantId = await requireTenantId();
     if (!tenantId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -67,6 +73,11 @@ export async function PATCH(
 ) {
   try {
     const { id } = await params;
+
+    // ✅ SECURITY FIX #3: RBAC permission check
+    const permError = await requirePermission('edit_bank_accounts');
+    if (permError) return permError;
+
     const tenantId = await requireTenantId();
     if (!tenantId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -147,6 +158,11 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params;
+
+    // ✅ SECURITY FIX #3: RBAC permission check
+    const permError = await requirePermission('delete_bank_accounts');
+    if (permError) return permError;
+
     const tenantId = await requireTenantId();
     if (!tenantId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

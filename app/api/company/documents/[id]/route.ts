@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getCurrentTenantId, requireTenantId } from '@/lib/tenant';
+import { requirePermission } from '@/lib/middleware/require-permission';
 
 /**
  * DELETE /api/company/documents/[id]
@@ -13,6 +14,10 @@ export async function DELETE(
   const { id } = await params;
 
   try {
+    // ✅ SECURITY FIX #3: RBAC permission check
+    const permError = await requirePermission('delete_documents');
+    if (permError) return permError;
+
     const tenantId = await requireTenantId();
 
     // Check document exists

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getCurrentTenantId, requireTenantId } from '@/lib/tenant';
 import { auth } from '@/auth';
+import { requirePermission } from '@/lib/middleware/require-permission';
 
 /**
  * POST /api/accounting/expenses/[id]/approve
@@ -13,6 +14,11 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
+
+    // ✅ SECURITY FIX #3: RBAC permission check
+    const permError = await requirePermission('approve_expenses');
+    if (permError) return permError;
+
     const tenantId = await requireTenantId();
     if (!tenantId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

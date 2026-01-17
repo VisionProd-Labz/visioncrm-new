@@ -4,6 +4,7 @@ import { getCurrentTenantId, requireTenantId } from '@/lib/tenant';
 import { auth } from '@/auth';
 import { expenseSchema } from '@/lib/accounting/validations';
 import { z } from 'zod';
+import { requirePermission } from '@/lib/middleware/require-permission';
 
 /**
  * GET /api/accounting/expenses/[id]
@@ -15,6 +16,11 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
+
+    // ✅ SECURITY FIX #3: RBAC permission check
+    const permError = await requirePermission('view_expenses');
+    if (permError) return permError;
+
     const tenantId = await requireTenantId();
     if (!tenantId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -64,6 +70,11 @@ export async function PATCH(
 ) {
   try {
     const { id } = await params;
+
+    // ✅ SECURITY FIX #3: RBAC permission check
+    const permError = await requirePermission('edit_expenses');
+    if (permError) return permError;
+
     const tenantId = await requireTenantId();
     if (!tenantId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -156,6 +167,11 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params;
+
+    // ✅ SECURITY FIX #3: RBAC permission check
+    const permError = await requirePermission('delete_expenses');
+    if (permError) return permError;
+
     const tenantId = await requireTenantId();
     if (!tenantId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

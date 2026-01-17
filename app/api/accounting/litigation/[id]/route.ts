@@ -4,8 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { requireTenantId } from '@/lib/tenant';
 import { litigationSchema } from '@/lib/accounting/validations';
 import { z } from 'zod';
-
-// Utility function to get current tenant ID
+import { requirePermission } from '@/lib/middleware/require-permission';
 
 /**
  * GET /api/accounting/litigation/[id]
@@ -17,6 +16,11 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
+
+    // ✅ SECURITY FIX #3: RBAC permission check
+    const permError = await requirePermission('view_litigation');
+    if (permError) return permError;
+
     const tenantId = await requireTenantId();
 
     const litigationCase = await prisma.litigation.findFirst({
@@ -54,6 +58,11 @@ export async function PATCH(
 ) {
   try {
     const { id } = await params;
+
+    // ✅ SECURITY FIX #3: RBAC permission check
+    const permError = await requirePermission('edit_litigation');
+    if (permError) return permError;
+
     const tenantId = await requireTenantId();
     const body = await req.json();
 
@@ -110,6 +119,11 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params;
+
+    // ✅ SECURITY FIX #3: RBAC permission check
+    const permError = await requirePermission('delete_litigation');
+    if (permError) return permError;
+
     const tenantId = await requireTenantId();
 
     // Check if case exists

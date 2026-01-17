@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { prisma } from '@/lib/prisma';
 import { z } from 'zod';
+import { requirePermission } from '@/lib/middleware/require-permission';
+import { requireTenantId } from '@/lib/tenant';
 
 const updateProjectSchema = z.object({
   name: z.string().optional(),
@@ -19,16 +21,20 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
-    const session = await auth();
 
-    if (!session || !(session.user as any).tenantId) {
+    // ✅ SECURITY FIX #3: RBAC permission check
+    const permError = await requirePermission('view_projects');
+    if (permError) return permError;
+
+    const tenantId = await requireTenantId();
+    if (!tenantId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     const project = await prisma.project.findFirst({
       where: {
         id: id,
-        tenant_id: (session.user as any).tenantId,
+        tenant_id: tenantId,
         deleted_at: null,
       },
       include: {
@@ -88,9 +94,13 @@ export async function PATCH(
 ) {
   try {
     const { id } = await params;
-    const session = await auth();
 
-    if (!session || !(session.user as any).tenantId) {
+    // ✅ SECURITY FIX #3: RBAC permission check
+    const permError = await requirePermission('edit_projects');
+    if (permError) return permError;
+
+    const tenantId = await requireTenantId();
+    if (!tenantId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -101,7 +111,7 @@ export async function PATCH(
     const existingProject = await prisma.project.findFirst({
       where: {
         id: id,
-        tenant_id: (session.user as any).tenantId,
+        tenant_id: tenantId,
         deleted_at: null,
       },
     });
@@ -168,9 +178,13 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params;
-    const session = await auth();
 
-    if (!session || !(session.user as any).tenantId) {
+    // ✅ SECURITY FIX #3: RBAC permission check
+    const permError = await requirePermission('delete_projects');
+    if (permError) return permError;
+
+    const tenantId = await requireTenantId();
+    if (!tenantId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -178,7 +192,7 @@ export async function DELETE(
     const existingProject = await prisma.project.findFirst({
       where: {
         id: id,
-        tenant_id: (session.user as any).tenantId,
+        tenant_id: tenantId,
         deleted_at: null,
       },
     });
