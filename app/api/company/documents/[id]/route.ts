@@ -15,7 +15,7 @@ export async function DELETE(
 
   try {
     // ✅ SECURITY FIX #3: RBAC permission check
-    const permError = await requirePermission('delete_documents');
+    const permError = await requirePermission('delete_company_documents');
     if (permError) return permError;
 
     const tenantId = await requireTenantId();

@@ -62,6 +62,17 @@ export type Permission =
   // Reports
   | 'view_reports'
 
+  // Projects
+  | 'view_projects'
+  | 'create_projects'
+  | 'edit_projects'
+  | 'delete_projects'
+
+  // Company Documents
+  | 'view_company_documents'
+  | 'upload_company_documents'
+  | 'delete_company_documents'
+
   // Team Management
   | 'view_team'
   | 'invite_members'
@@ -148,6 +159,8 @@ export const rolePermissions: Record<Role, Permission[]> = {
     'view_emails', 'send_emails',
     'use_ai_assistant',
     'view_reports',
+    'view_projects', 'create_projects', 'edit_projects', 'delete_projects',
+    'view_company_documents', 'upload_company_documents', 'delete_company_documents',
     'view_team', 'invite_members', 'edit_members', 'remove_members',
     'view_company', 'edit_company',
     'view_settings', 'edit_settings',
@@ -178,6 +191,8 @@ export const rolePermissions: Record<Role, Permission[]> = {
     'view_emails', 'send_emails',
     'use_ai_assistant',
     'view_reports',
+    'view_projects', 'create_projects', 'edit_projects', 'delete_projects',
+    'view_company_documents', 'upload_company_documents', 'delete_company_documents',
     'view_team', 'invite_members', 'edit_members', 'remove_members',
     'view_company', 'edit_company',
     'view_settings', 'edit_settings',
@@ -208,6 +223,8 @@ export const rolePermissions: Record<Role, Permission[]> = {
     'view_emails', 'send_emails',
     'use_ai_assistant',
     'view_reports',
+    'view_projects', 'create_projects', 'edit_projects', 'delete_projects',
+    'view_company_documents', 'upload_company_documents', // Cannot delete company documents
     'view_team', 'invite_members', 'edit_members', // Cannot remove members
     'view_company', // Cannot edit company settings
     'view_settings',

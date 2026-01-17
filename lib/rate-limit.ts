@@ -2,26 +2,36 @@
 import { Redis } from '@upstash/redis';
 
 /**
- * Initialize Redis client for rate limiting
+ * Lazy Redis client initialization
  * CRITICAL: Redis is REQUIRED in production for security
  */
-const redis =
-  process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN
-    ? new Redis({
-        url: process.env.UPSTASH_REDIS_REST_URL,
-        token: process.env.UPSTASH_REDIS_REST_TOKEN,
-      })
-    : null;
+let redis: Redis | null = null;
+let redisInitialized = false;
 
-// 🔴 SECURITY CHECK: Block production deployment without Redis
-if (!redis && process.env.NODE_ENV === 'production') {
-  console.error('🔴 CRITICAL SECURITY ERROR: Redis rate limiting is REQUIRED in production');
-  console.error('Please configure UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN');
-  console.error('Get free Redis at: https://upstash.com');
-  throw new Error(
-    'CRITICAL: Redis rate limiting must be configured in production environment. ' +
-      'Set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN environment variables.'
-  );
+function getRedisClient(): Redis | null {
+  if (redisInitialized) {
+    return redis;
+  }
+
+  // Initialize Redis client on first use
+  if (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) {
+    redis = new Redis({
+      url: process.env.UPSTASH_REDIS_REST_URL,
+      token: process.env.UPSTASH_REDIS_REST_TOKEN,
+    });
+  } else {
+    redis = null;
+
+    // 🔴 SECURITY CHECK: Block production requests without Redis
+    if (process.env.NODE_ENV === 'production') {
+      console.error('🔴 CRITICAL SECURITY ERROR: Redis rate limiting is REQUIRED in production');
+      console.error('Please configure UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN');
+      console.error('Get free Redis at: https://upstash.com');
+    }
+  }
+
+  redisInitialized = true;
+  return redis;
 }
 
 /**
@@ -58,7 +68,9 @@ export async function checkRateLimit(
   identifier: string,
   type: keyof typeof RATE_LIMITS = 'ai_chat'
 ): Promise<{ allowed: boolean; remaining: number; resetAt: Date }> {
-  // If Redis is not configured (development only - production will throw error at startup)
+  const redis = getRedisClient();
+
+  // If Redis is not configured (development only - production will log error)
   if (!redis) {
     if (process.env.NODE_ENV === 'development') {
       console.warn('⚠️  [DEV] Redis not configured - rate limiting disabled in development');
@@ -152,6 +164,8 @@ export async function getRateLimitStatus(
   identifier: string,
   type: keyof typeof RATE_LIMITS = 'ai_chat'
 ): Promise<{ used: number; limit: number; remaining: number }> {
+  const redis = getRedisClient();
+
   if (!redis) {
     const config = RATE_LIMITS[type];
     return { used: 0, limit: config.maxRequests, remaining: config.maxRequests };
