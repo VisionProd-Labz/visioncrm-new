@@ -15,7 +15,6 @@ export async function POST(req: NextRequest, context: any) {
   const ip =
     req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
     req.headers.get('x-real-ip') ||
-    req.ip ||
     'unknown';
 
   // Apply rate limiting on ALL POST requests to /api/auth/*
