@@ -11,6 +11,11 @@ import type { NextRequest } from 'next/server';
  * 3. Blocking requests from external domains
  */
 export async function middleware(request: NextRequest) {
+  // Skip middleware during build time
+  if (process.env.NEXT_PHASE === 'phase-production-build') {
+    return NextResponse.next();
+  }
+
   const { pathname, origin } = request.nextUrl;
   const method = request.method;
 

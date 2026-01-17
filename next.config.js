@@ -6,6 +6,8 @@ const nextConfig = {
       bodySizeLimit: '10mb',
     },
   },
+  // Skip page data collection during build
+  pageExtensions: ['ts', 'tsx'],
   images: {
     remotePatterns: [
       {

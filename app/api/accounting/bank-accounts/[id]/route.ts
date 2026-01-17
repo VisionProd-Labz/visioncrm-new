@@ -4,6 +4,10 @@ import { getCurrentTenantId, requireTenantId } from '@/lib/tenant';
 import { bankAccountSchema } from '@/lib/accounting/validations';
 import { z } from 'zod';
 
+// Force dynamic rendering - no static optimization
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
 /**
  * GET /api/accounting/bank-accounts/[id]
  * Get a specific bank account
