@@ -10,7 +10,7 @@ export const { GET } = handlers;
 // Wrap POST handler with rate limiting
 const originalPOST = handlers.POST;
 
-export async function POST(req: NextRequest, context: any) {
+export async function POST(req: NextRequest) {
   // Get client IP for rate limiting
   const ip =
     req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
@@ -65,5 +65,5 @@ export async function POST(req: NextRequest, context: any) {
   }
 
   // Call original POST handler
-  return originalPOST(req, context);
+  return originalPOST(req);
 }
