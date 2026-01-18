@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
-import { requirePermission } from '@/lib/middleware/require-permission';
 import { prisma } from '@/lib/prisma';
-import { getCurrentTenantId, requireTenantId } from '@/lib/tenant';
+import { ApiErrors, handleApiError } from '@/lib/api/error-handler';
+import { auth } from '@/auth';
+import { hasPermission, type Role } from '@/lib/permissions';
 import { z } from 'zod';
 
 const documentSchema = z.object({
@@ -16,19 +17,27 @@ const documentSchema = z.object({
 /**
  * GET /api/company/documents
  * List company documents
+ *
+ * ✅ REFACTORED: Using centralized error handler
  */
 export async function GET(req: Request) {
   try {
-    // ✅ SECURITY FIX #3: Permission check
-    const permError = await requirePermission('view_company');
-    if (permError) return permError;
+    const session = await auth();
+    if (!session?.user) {
+      throw ApiErrors.Unauthorized();
+    }
 
-    const tenantId = await requireTenantId();
+    const user = session.user as any;
+    const role = user.role as Role;
+    const tenantId = user.tenantId as string;
+
+    if (!hasPermission(role, 'view_company_documents')) {
+      throw ApiErrors.Forbidden('Permission requise: view_company_documents');
+    }
+
     const { searchParams } = new URL(req.url);
-
     const category = searchParams.get('category');
 
-    // Build where clause
     const where: any = {
       tenant_id: tenantId,
       deleted_at: null,
@@ -38,7 +47,6 @@ export async function GET(req: Request) {
       where.category = category;
     }
 
-    // Get documents
     const documents = await prisma.document.findMany({
       where,
       orderBy: { created_at: 'desc' },
@@ -46,27 +54,37 @@ export async function GET(req: Request) {
 
     return NextResponse.json({ documents });
   } catch (error) {
-    console.error('Get documents error:', error);
-    return NextResponse.json(
-      { error: 'Erreur lors de la récupération des documents' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: '/api/company/documents',
+      method: 'GET',
+    });
   }
 }
 
 /**
  * POST /api/company/documents
  * Upload a new document
+ *
+ * ✅ REFACTORED: Using centralized error handler
  */
 export async function POST(req: Request) {
   try {
-    const tenantId = await requireTenantId();
-    const body = await req.json();
+    const session = await auth();
+    if (!session?.user) {
+      throw ApiErrors.Unauthorized();
+    }
 
-    // Validate input
+    const user = session.user as any;
+    const role = user.role as Role;
+    const tenantId = user.tenantId as string;
+
+    if (!hasPermission(role, 'upload_company_documents')) {
+      throw ApiErrors.Forbidden('Permission requise: upload_company_documents');
+    }
+
+    const body = await req.json();
     const data = documentSchema.parse(body);
 
-    // Create document
     const document = await prisma.document.create({
       data: {
         ...data,
@@ -76,17 +94,9 @@ export async function POST(req: Request) {
 
     return NextResponse.json(document, { status: 201 });
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'Données invalides', details: error.errors },
-        { status: 400 }
-      );
-    }
-
-    console.error('Create document error:', error);
-    return NextResponse.json(
-      { error: 'Erreur lors de la création du document' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: '/api/company/documents',
+      method: 'POST',
+    });
   }
 }

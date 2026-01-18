@@ -1,25 +1,39 @@
-import { NextResponse } from 'next/server';
-import { requirePermission } from '@/lib/middleware/require-permission';
+import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getCurrentTenantId, requireTenantId } from '@/lib/tenant';
-import { z } from 'zod';
+import { ApiErrors, handleApiError } from '@/lib/api/error-handler';
+import { auth } from '@/auth';
+import { hasPermission, type Role } from '@/lib/permissions';
+import { calculateTotals } from '@/lib/utils/invoice-calculations';
 
 /**
  * GET /api/invoices/:id
  * Get a single invoice
+ *
+ * ✅ REFACTORED: Using centralized error handler
  */
 export async function GET(
-  req: Request,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
 
   try {
-    const tenantId = await requireTenantId();
+    const session = await auth();
+    if (!session?.user) {
+      throw ApiErrors.Unauthorized();
+    }
+
+    const user = session.user as any;
+    const role = user.role as Role;
+    const tenantId = user.tenantId as string;
+
+    if (!hasPermission(role, 'view_invoices')) {
+      throw ApiErrors.Forbidden('Permission requise: view_invoices');
+    }
 
     const invoice = await prisma.invoice.findFirst({
       where: {
-        id: id,
+        id,
         tenant_id: tenantId,
         deleted_at: null,
       },
@@ -40,53 +54,58 @@ export async function GET(
     });
 
     if (!invoice) {
-      return NextResponse.json(
-        { error: 'Facture non trouvée' },
-        { status: 404 }
-      );
+      throw ApiErrors.NotFound('Facture');
     }
 
     return NextResponse.json(invoice);
   } catch (error) {
-    console.error('Get invoice error:', error);
-    return NextResponse.json(
-      { error: 'Erreur lors de la récupération de la facture' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: `/api/invoices/${id}`,
+      method: 'GET',
+    });
   }
 }
 
 /**
  * PATCH /api/invoices/:id
  * Update an invoice
+ *
+ * ✅ REFACTORED: Using centralized error handler + shared utilities
  */
 export async function PATCH(
-  req: Request,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
 
   try {
-    const tenantId = await requireTenantId();
+    const session = await auth();
+    if (!session?.user) {
+      throw ApiErrors.Unauthorized();
+    }
+
+    const user = session.user as any;
+    const role = user.role as Role;
+    const tenantId = user.tenantId as string;
+
+    if (!hasPermission(role, 'edit_invoices')) {
+      throw ApiErrors.Forbidden('Permission requise: edit_invoices');
+    }
+
     const body = await req.json();
 
-    // Check invoice exists
     const existing = await prisma.invoice.findFirst({
       where: {
-        id: id,
+        id,
         tenant_id: tenantId,
         deleted_at: null,
       },
     });
 
     if (!existing) {
-      return NextResponse.json(
-        { error: 'Facture non trouvée' },
-        { status: 404 }
-      );
+      throw ApiErrors.NotFound('Facture');
     }
 
-    // Update invoice
     const updateData: any = {};
 
     if (body.status) updateData.status = body.status;
@@ -101,26 +120,15 @@ export async function PATCH(
       updateData.paid_at = new Date();
     }
 
-    // Recalculate totals if items changed
+    // Recalculate totals if items changed using shared utility
     if (body.items) {
       updateData.items = body.items;
-
-      const subtotal = body.items.reduce((sum: number, item: any) => {
-        return sum + (item.quantity * item.unit_price);
-      }, 0);
-
-      const vatRate = body.items[0]?.vat_rate || 20;
-      const vatAmount = (subtotal * vatRate) / 100;
-      const total = subtotal + vatAmount;
-
-      updateData.subtotal = Number(subtotal.toFixed(2));
-      updateData.vat_rate = vatRate;
-      updateData.vat_amount = Number(vatAmount.toFixed(2));
-      updateData.total = Number(total.toFixed(2));
+      const totals = calculateTotals(body.items);
+      Object.assign(updateData, totals);
     }
 
     const invoice = await prisma.invoice.update({
-      where: { id: id },
+      where: { id },
       data: updateData,
       include: {
         contact: true,
@@ -130,55 +138,61 @@ export async function PATCH(
 
     return NextResponse.json(invoice);
   } catch (error) {
-    console.error('Update invoice error:', error);
-    return NextResponse.json(
-      { error: 'Erreur lors de la mise à jour de la facture' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: `/api/invoices/${id}`,
+      method: 'PATCH',
+    });
   }
 }
 
 /**
  * DELETE /api/invoices/:id
  * Soft delete an invoice
+ *
+ * ✅ REFACTORED: Using centralized error handler
  */
 export async function DELETE(
-  req: Request,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
 
   try {
-    const tenantId = await requireTenantId();
+    const session = await auth();
+    if (!session?.user) {
+      throw ApiErrors.Unauthorized();
+    }
 
-    // Check invoice exists
+    const user = session.user as any;
+    const role = user.role as Role;
+    const tenantId = user.tenantId as string;
+
+    if (!hasPermission(role, 'delete_invoices')) {
+      throw ApiErrors.Forbidden('Permission requise: delete_invoices');
+    }
+
     const existing = await prisma.invoice.findFirst({
       where: {
-        id: id,
+        id,
         tenant_id: tenantId,
         deleted_at: null,
       },
     });
 
     if (!existing) {
-      return NextResponse.json(
-        { error: 'Facture non trouvée' },
-        { status: 404 }
-      );
+      throw ApiErrors.NotFound('Facture');
     }
 
-    // Soft delete
     await prisma.invoice.update({
-      where: { id: id },
+      where: { id },
       data: { deleted_at: new Date() },
     });
 
     return NextResponse.json({ message: 'Facture supprimée' });
   } catch (error) {
-    console.error('Delete invoice error:', error);
-    return NextResponse.json(
-      { error: 'Erreur lors de la suppression de la facture' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: `/api/invoices/${id}`,
+      method: 'DELETE',
+    });
   }
 }

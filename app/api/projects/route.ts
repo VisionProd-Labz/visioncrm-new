@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@/auth';
 import { prisma } from '@/lib/prisma';
+import { ApiErrors, handleApiError } from '@/lib/api/error-handler';
+import { auth } from '@/auth';
+import { hasPermission, type Role } from '@/lib/permissions';
 import { z } from 'zod';
-import { requirePermission } from '@/lib/middleware/require-permission';
 
 const createProjectSchema = z.object({
   name: z.string().min(1),
@@ -14,12 +15,25 @@ const createProjectSchema = z.object({
   endDate: z.string().optional(),
 });
 
+/**
+ * POST /api/projects
+ * Create a new project
+ *
+ * ✅ REFACTORED: Using centralized error handler
+ */
 export async function POST(req: NextRequest) {
   try {
     const session = await auth();
+    if (!session?.user) {
+      throw ApiErrors.Unauthorized();
+    }
 
-    if (!session?.user || !(session.user as any).tenantId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const user = session.user as any;
+    const role = user.role as Role;
+    const tenantId = user.tenantId as string;
+
+    if (!hasPermission(role, 'create_projects')) {
+      throw ApiErrors.Forbidden('Permission requise: create_projects');
     }
 
     const body = await req.json();
@@ -34,8 +48,8 @@ export async function POST(req: NextRequest) {
         quote_id: data.quoteId,
         start_date: data.startDate ? new Date(data.startDate) : null,
         end_date: data.endDate ? new Date(data.endDate) : null,
-        tenant_id: (session.user as any).tenantId,
-        created_by: session.user.id,
+        tenant_id: tenantId,
+        created_by: user.id,
       },
       include: {
         contact: true,
@@ -45,32 +59,32 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(project, { status: 201 });
   } catch (error) {
-    console.error('Error creating project:', error);
-
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'Invalid data', details: error.errors },
-        { status: 400 }
-      );
-    }
-
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: '/api/projects',
+      method: 'POST',
+    });
   }
 }
 
+/**
+ * GET /api/projects
+ * List all projects
+ *
+ * ✅ REFACTORED: Using centralized error handler
+ */
 export async function GET(req: NextRequest) {
   try {
-    // ✅ SECURITY FIX #3: Permission check
-    const permError = await requirePermission('view_tasks');
-    if (permError) return permError;
-
     const session = await auth();
+    if (!session?.user) {
+      throw ApiErrors.Unauthorized();
+    }
 
-    if (!session?.user || !(session.user as any).tenantId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const user = session.user as any;
+    const role = user.role as Role;
+    const tenantId = user.tenantId as string;
+
+    if (!hasPermission(role, 'view_projects')) {
+      throw ApiErrors.Forbidden('Permission requise: view_projects');
     }
 
     const { searchParams } = new URL(req.url);
@@ -79,7 +93,7 @@ export async function GET(req: NextRequest) {
 
     const projects = await prisma.project.findMany({
       where: {
-        tenant_id: (session.user as any).tenantId,
+        tenant_id: tenantId,
         deleted_at: null,
         ...(status && { status: status as any }),
         ...(contactId && { contact_id: contactId }),
@@ -114,10 +128,9 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json(projects);
   } catch (error) {
-    console.error('Error fetching projects:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: '/api/projects',
+      method: 'GET',
+    });
   }
 }

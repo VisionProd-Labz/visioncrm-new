@@ -1,23 +1,32 @@
 import { NextResponse } from 'next/server';
-import { requirePermission } from '@/lib/middleware/require-permission';
 import { prisma } from '@/lib/prisma';
-import { getCurrentTenantId, requireTenantId } from '@/lib/tenant';
 import { vehicleSchema } from '@/lib/validations';
-import { z } from 'zod';
+import { ApiErrors, handleApiError } from '@/lib/api/error-handler';
+import { auth } from '@/auth';
+import { hasPermission, type Role } from '@/lib/permissions';
 
 /**
  * GET /api/vehicles
  * List vehicles with filters
+ *
+ * ✅ REFACTORED: Using centralized error handler
  */
 export async function GET(req: Request) {
   try {
-    // ✅ SECURITY FIX #3: Permission check
-    const permError = await requirePermission('view_vehicles');
-    if (permError) return permError;
+    const session = await auth();
+    if (!session?.user) {
+      throw ApiErrors.Unauthorized();
+    }
 
-    const tenantId = await requireTenantId();
+    const user = session.user as any;
+    const role = user.role as Role;
+    const tenantId = user.tenantId as string;
+
+    if (!hasPermission(role, 'view_vehicles')) {
+      throw ApiErrors.Forbidden('Permission requise: view_vehicles');
+    }
+
     const { searchParams } = new URL(req.url);
-
     const ownerId = searchParams.get('owner_id');
     const search = searchParams.get('search') || '';
 
@@ -66,24 +75,35 @@ export async function GET(req: Request) {
 
     return NextResponse.json({ vehicles });
   } catch (error) {
-    console.error('Get vehicles error:', error);
-    return NextResponse.json(
-      { error: 'Erreur lors de la récupération des véhicules' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: '/api/vehicles',
+      method: 'GET',
+    });
   }
 }
 
 /**
  * POST /api/vehicles
  * Create a new vehicle
+ *
+ * ✅ REFACTORED: Using centralized error handler
  */
 export async function POST(req: Request) {
   try {
-    const tenantId = await requireTenantId();
-    const body = await req.json();
+    const session = await auth();
+    if (!session?.user) {
+      throw ApiErrors.Unauthorized();
+    }
 
-    // Validate input
+    const user = session.user as any;
+    const role = user.role as Role;
+    const tenantId = user.tenantId as string;
+
+    if (!hasPermission(role, 'create_vehicles')) {
+      throw ApiErrors.Forbidden('Permission requise: create_vehicles');
+    }
+
+    const body = await req.json();
     const data = vehicleSchema.parse(body);
 
     // Check for duplicate VIN
@@ -96,13 +116,9 @@ export async function POST(req: Request) {
     });
 
     if (existing) {
-      return NextResponse.json(
-        { error: 'Un véhicule avec ce VIN existe déjà' },
-        { status: 400 }
-      );
+      throw ApiErrors.Conflict('Un véhicule avec ce VIN existe déjà');
     }
 
-    // Create vehicle
     const vehicle = await prisma.vehicle.create({
       data: {
         ...data,
@@ -115,17 +131,9 @@ export async function POST(req: Request) {
 
     return NextResponse.json(vehicle, { status: 201 });
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'Données invalides', details: error.errors },
-        { status: 400 }
-      );
-    }
-
-    console.error('Create vehicle error:', error);
-    return NextResponse.json(
-      { error: 'Erreur lors de la création du véhicule' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: '/api/vehicles',
+      method: 'POST',
+    });
   }
 }

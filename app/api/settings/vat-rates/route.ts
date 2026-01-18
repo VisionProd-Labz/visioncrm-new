@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server';
-import { requirePermission } from '@/lib/middleware/require-permission';
-import { auth } from '@/auth';
 import { prisma } from '@/lib/prisma';
-import { getCurrentTenantId, requireTenantId } from '@/lib/tenant';
+import { ApiErrors, handleApiError } from '@/lib/api/error-handler';
+import { auth } from '@/auth';
+import { hasPermission, type Role } from '@/lib/permissions';
 import { z } from 'zod';
 
 const vatRateSchema = z.object({
@@ -13,23 +13,25 @@ const vatRateSchema = z.object({
   is_active: z.boolean().optional(),
 });
 
-// GET /api/settings/vat-rates - List VAT rates
+/**
+ * GET /api/settings/vat-rates
+ * List VAT rates
+ *
+ * ✅ REFACTORED: Using centralized error handler
+ */
 export async function GET(req: Request) {
   try {
-    // ✅ SECURITY FIX #3: Permission check
-    const permError = await requirePermission('view_settings');
-    if (permError) return permError;
-
     const session = await auth();
-
     if (!session?.user) {
-      return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
+      throw ApiErrors.Unauthorized();
     }
 
-    const tenantId = await requireTenantId();
+    const user = session.user as any;
+    const role = user.role as Role;
+    const tenantId = user.tenantId as string;
 
-    if (!tenantId) {
-      return NextResponse.json({ error: 'Tenant non trouvé' }, { status: 404 });
+    if (!hasPermission(role, 'view_settings')) {
+      throw ApiErrors.Forbidden('Permission requise: view_settings');
     }
 
     const rates = await prisma.vatRate.findMany({
@@ -44,27 +46,32 @@ export async function GET(req: Request) {
 
     return NextResponse.json({ rates });
   } catch (error) {
-    console.error('Error fetching VAT rates:', error);
-    return NextResponse.json(
-      { error: 'Erreur lors de la récupération des taux de TVA' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: '/api/settings/vat-rates',
+      method: 'GET',
+    });
   }
 }
 
-// POST /api/settings/vat-rates - Create VAT rate
+/**
+ * POST /api/settings/vat-rates
+ * Create VAT rate
+ *
+ * ✅ REFACTORED: Using centralized error handler
+ */
 export async function POST(req: Request) {
   try {
     const session = await auth();
-
     if (!session?.user) {
-      return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
+      throw ApiErrors.Unauthorized();
     }
 
-    const tenantId = await requireTenantId();
+    const user = session.user as any;
+    const role = user.role as Role;
+    const tenantId = user.tenantId as string;
 
-    if (!tenantId) {
-      return NextResponse.json({ error: 'Tenant non trouvé' }, { status: 404 });
+    if (!hasPermission(role, 'edit_settings')) {
+      throw ApiErrors.Forbidden('Permission requise: edit_settings');
     }
 
     const body = await req.json();
@@ -92,14 +99,9 @@ export async function POST(req: Request) {
 
     return NextResponse.json(rate, { status: 201 });
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json({ error: error.errors }, { status: 400 });
-    }
-
-    console.error('Error creating VAT rate:', error);
-    return NextResponse.json(
-      { error: 'Erreur lors de la création du taux de TVA' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: '/api/settings/vat-rates',
+      method: 'POST',
+    });
   }
 }

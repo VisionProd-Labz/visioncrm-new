@@ -1,29 +1,32 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@/auth';
 import { prisma } from '@/lib/prisma';
-import { requireTenantId } from '@/lib/tenant';
+import { ApiErrors, handleApiError } from '@/lib/api/error-handler';
+import { auth } from '@/auth';
+import { hasPermission, type Role } from '@/lib/permissions';
 import { inventoryItemSchema } from '@/lib/accounting/validations';
-import { z } from 'zod';
-import { requirePermission } from '@/lib/middleware/require-permission';
-
-// Utility function to get current tenant ID
 
 /**
  * GET /api/accounting/inventory
  * List all inventory items for the current tenant
- * Query params:
- * - category: Filter by category
- * - lowStock: Show only items below reorder point
+ *
+ * ✅ REFACTORED: Using centralized error handler
  */
 export async function GET(req: NextRequest) {
   try {
-    // ✅ SECURITY FIX #3: Permission check
-    const permError = await requirePermission('view_inventory');
-    if (permError) return permError;
+    const session = await auth();
+    if (!session?.user) {
+      throw ApiErrors.Unauthorized();
+    }
 
-    const tenantId = await requireTenantId();
+    const user = session.user as any;
+    const role = user.role as Role;
+    const tenantId = user.tenantId as string;
+
+    if (!hasPermission(role, 'view_inventory')) {
+      throw ApiErrors.Forbidden('Permission requise: view_inventory');
+    }
+
     const { searchParams } = new URL(req.url);
-
     const category = searchParams.get('category');
     const lowStock = searchParams.get('lowStock') === 'true';
 
@@ -39,12 +42,10 @@ export async function GET(req: NextRequest) {
       orderBy: { created_at: 'desc' },
     });
 
-    // Filter low stock items if requested
     const filteredItems = lowStock
       ? items.filter(item => item.quantity <= item.reorder_point)
       : items;
 
-    // Calculate stats
     const stats = {
       totalItems: items.length,
       totalValue: items.reduce((sum, item) => sum + Number(item.total_value), 0),
@@ -55,27 +56,37 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ items: filteredItems, stats });
   } catch (error) {
-    console.error('Error fetching inventory:', error);
-    return NextResponse.json(
-      { error: 'Une erreur est survenue lors de la récupération de l\'inventaire' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: '/api/accounting/inventory',
+      method: 'GET',
+    });
   }
 }
 
 /**
  * POST /api/accounting/inventory
  * Create a new inventory item
+ *
+ * ✅ REFACTORED: Using centralized error handler
  */
 export async function POST(req: NextRequest) {
   try {
-    const tenantId = await requireTenantId();
-    const body = await req.json();
+    const session = await auth();
+    if (!session?.user) {
+      throw ApiErrors.Unauthorized();
+    }
 
-    // Validate request body
+    const user = session.user as any;
+    const role = user.role as Role;
+    const tenantId = user.tenantId as string;
+
+    if (!hasPermission(role, 'create_inventory')) {
+      throw ApiErrors.Forbidden('Permission requise: create_inventory');
+    }
+
+    const body = await req.json();
     const data = inventoryItemSchema.parse(body);
 
-    // Check for duplicate SKU
     const existing = await prisma.inventoryItem.findFirst({
       where: {
         tenant_id: tenantId,
@@ -85,13 +96,9 @@ export async function POST(req: NextRequest) {
     });
 
     if (existing) {
-      return NextResponse.json(
-        { error: 'Un article avec ce SKU existe déjà' },
-        { status: 400 }
-      );
+      throw ApiErrors.BadRequest('Un article avec ce SKU existe déjà');
     }
 
-    // Create inventory item
     const item = await prisma.inventoryItem.create({
       data: {
         ...data,
@@ -101,17 +108,9 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(item, { status: 201 });
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'Données invalides', details: error.errors },
-        { status: 400 }
-      );
-    }
-
-    console.error('Error creating inventory item:', error);
-    return NextResponse.json(
-      { error: 'Une erreur est survenue lors de la création de l\'article' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: '/api/accounting/inventory',
+      method: 'POST',
+    });
   }
 }

@@ -1,25 +1,39 @@
-import { NextResponse } from 'next/server';
-import { requirePermission } from '@/lib/middleware/require-permission';
+import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getCurrentTenantId, requireTenantId } from '@/lib/tenant';
-import { z } from 'zod';
+import { ApiErrors, handleApiError } from '@/lib/api/error-handler';
+import { auth } from '@/auth';
+import { hasPermission, type Role } from '@/lib/permissions';
+import { calculateTotals } from '@/lib/utils/invoice-calculations';
 
 /**
  * GET /api/quotes/:id
  * Get a single quote
+ *
+ * ✅ REFACTORED: Using centralized error handler
  */
 export async function GET(
-  req: Request,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
 
   try {
-    const tenantId = await requireTenantId();
+    const session = await auth();
+    if (!session?.user) {
+      throw ApiErrors.Unauthorized();
+    }
+
+    const user = session.user as any;
+    const role = user.role as Role;
+    const tenantId = user.tenantId as string;
+
+    if (!hasPermission(role, 'view_quotes')) {
+      throw ApiErrors.Forbidden('Permission requise: view_quotes');
+    }
 
     const quote = await prisma.quote.findFirst({
       where: {
-        id: id,
+        id,
         tenant_id: tenantId,
         deleted_at: null,
       },
@@ -40,79 +54,73 @@ export async function GET(
     });
 
     if (!quote) {
-      return NextResponse.json(
-        { error: 'Devis non trouvé' },
-        { status: 404 }
-      );
+      throw ApiErrors.NotFound('Devis');
     }
 
     return NextResponse.json(quote);
   } catch (error) {
-    console.error('Get quote error:', error);
-    return NextResponse.json(
-      { error: 'Erreur lors de la récupération du devis' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: `/api/quotes/${id}`,
+      method: 'GET',
+    });
   }
 }
 
 /**
  * PATCH /api/quotes/:id
  * Update a quote
+ *
+ * ✅ REFACTORED: Using centralized error handler + shared utilities
  */
 export async function PATCH(
-  req: Request,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
 
   try {
-    const tenantId = await requireTenantId();
+    const session = await auth();
+    if (!session?.user) {
+      throw ApiErrors.Unauthorized();
+    }
+
+    const user = session.user as any;
+    const role = user.role as Role;
+    const tenantId = user.tenantId as string;
+
+    if (!hasPermission(role, 'edit_quotes')) {
+      throw ApiErrors.Forbidden('Permission requise: edit_quotes');
+    }
+
     const body = await req.json();
 
-    // Check quote exists
     const existing = await prisma.quote.findFirst({
       where: {
-        id: id,
+        id,
         tenant_id: tenantId,
         deleted_at: null,
       },
     });
 
     if (!existing) {
-      return NextResponse.json(
-        { error: 'Devis non trouvé' },
-        { status: 404 }
-      );
+      throw ApiErrors.NotFound('Devis');
     }
 
-    // Update quote
     const updateData: any = {};
 
     if (body.status) updateData.status = body.status;
     if (body.notes !== undefined) updateData.notes = body.notes;
     if (body.valid_until) updateData.valid_until = new Date(body.valid_until);
 
-    // Recalculate totals if items changed
+    // Recalculate totals if items changed using shared utility
     if (body.items) {
       updateData.items = body.items;
-
-      const subtotal = body.items.reduce((sum: number, item: any) => {
-        return sum + (item.quantity * item.unit_price);
-      }, 0);
-
-      const vatRate = body.items[0]?.vat_rate || 20;
-      const vatAmount = (subtotal * vatRate) / 100;
-      const total = subtotal + vatAmount;
-
-      updateData.subtotal = Number(subtotal.toFixed(2));
-      updateData.vat_rate = vatRate;
-      updateData.vat_amount = Number(vatAmount.toFixed(2));
-      updateData.total = Number(total.toFixed(2));
+      const totals = calculateTotals(body.items);
+      Object.assign(updateData, totals);
     }
 
     const quote = await prisma.quote.update({
-      where: { id: id },
+      where: { id },
       data: updateData,
       include: {
         contact: true,
@@ -121,55 +129,61 @@ export async function PATCH(
 
     return NextResponse.json(quote);
   } catch (error) {
-    console.error('Update quote error:', error);
-    return NextResponse.json(
-      { error: 'Erreur lors de la mise à jour du devis' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: `/api/quotes/${id}`,
+      method: 'PATCH',
+    });
   }
 }
 
 /**
  * DELETE /api/quotes/:id
  * Soft delete a quote
+ *
+ * ✅ REFACTORED: Using centralized error handler
  */
 export async function DELETE(
-  req: Request,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
 
   try {
-    const tenantId = await requireTenantId();
+    const session = await auth();
+    if (!session?.user) {
+      throw ApiErrors.Unauthorized();
+    }
 
-    // Check quote exists
+    const user = session.user as any;
+    const role = user.role as Role;
+    const tenantId = user.tenantId as string;
+
+    if (!hasPermission(role, 'delete_quotes')) {
+      throw ApiErrors.Forbidden('Permission requise: delete_quotes');
+    }
+
     const existing = await prisma.quote.findFirst({
       where: {
-        id: id,
+        id,
         tenant_id: tenantId,
         deleted_at: null,
       },
     });
 
     if (!existing) {
-      return NextResponse.json(
-        { error: 'Devis non trouvé' },
-        { status: 404 }
-      );
+      throw ApiErrors.NotFound('Devis');
     }
 
-    // Soft delete
     await prisma.quote.update({
-      where: { id: id },
+      where: { id },
       data: { deleted_at: new Date() },
     });
 
     return NextResponse.json({ message: 'Devis supprimé' });
   } catch (error) {
-    console.error('Delete quote error:', error);
-    return NextResponse.json(
-      { error: 'Erreur lors de la suppression du devis' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: `/api/quotes/${id}`,
+      method: 'DELETE',
+    });
   }
 }

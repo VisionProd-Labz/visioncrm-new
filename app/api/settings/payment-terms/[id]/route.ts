@@ -1,8 +1,8 @@
-import { NextResponse } from 'next/server';
-import { requirePermission } from '@/lib/middleware/require-permission';
-import { auth } from '@/auth';
+import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getCurrentTenantId, requireTenantId } from '@/lib/tenant';
+import { ApiErrors, handleApiError } from '@/lib/api/error-handler';
+import { auth } from '@/auth';
+import { hasPermission, type Role } from '@/lib/permissions';
 import { z } from 'zod';
 
 const paymentTermUpdateSchema = z.object({
@@ -13,38 +13,44 @@ const paymentTermUpdateSchema = z.object({
   is_active: z.boolean().optional(),
 });
 
-// PATCH /api/settings/payment-terms/[id]
+/**
+ * PATCH /api/settings/payment-terms/:id
+ * Update payment term
+ *
+ * ✅ REFACTORED: Using centralized error handler
+ */
 export async function PATCH(
-  req: Request,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
+
   try {
     const session = await auth();
-
     if (!session?.user) {
-      return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
+      throw ApiErrors.Unauthorized();
     }
 
-    const tenantId = await requireTenantId();
+    const user = session.user as any;
+    const role = user.role as Role;
+    const tenantId = user.tenantId as string;
 
-    if (!tenantId) {
-      return NextResponse.json({ error: 'Tenant non trouvé' }, { status: 404 });
+    if (!hasPermission(role, 'edit_settings')) {
+      throw ApiErrors.Forbidden('Permission requise: edit_settings');
     }
 
-    const { id } = await params;
     const body = await req.json();
     const data = paymentTermUpdateSchema.parse(body);
 
-    // Verify ownership
     const existing = await prisma.paymentTerm.findFirst({
       where: {
-        id: id,
+        id,
         tenant_id: tenantId,
       },
     });
 
     if (!existing) {
-      return NextResponse.json({ error: 'Condition de paiement non trouvée' }, { status: 404 });
+      throw ApiErrors.NotFound('Condition de paiement');
     }
 
     // If setting as default, unset other defaults
@@ -61,74 +67,70 @@ export async function PATCH(
     }
 
     const term = await prisma.paymentTerm.update({
-      where: { id: id },
+      where: { id },
       data,
     });
 
     return NextResponse.json(term);
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json({ error: error.errors }, { status: 400 });
-    }
-
-    console.error('Error updating payment term:', error);
-    return NextResponse.json(
-      { error: 'Erreur lors de la mise à jour de la condition de paiement' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: `/api/settings/payment-terms/${id}`,
+      method: 'PATCH',
+    });
   }
 }
 
-// DELETE /api/settings/payment-terms/[id]
+/**
+ * DELETE /api/settings/payment-terms/:id
+ * Delete payment term
+ *
+ * ✅ REFACTORED: Using centralized error handler
+ */
 export async function DELETE(
-  req: Request,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
 
   try {
     const session = await auth();
-
     if (!session?.user) {
-      return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
+      throw ApiErrors.Unauthorized();
     }
 
-    const tenantId = await requireTenantId();
+    const user = session.user as any;
+    const role = user.role as Role;
+    const tenantId = user.tenantId as string;
 
-    if (!tenantId) {
-      return NextResponse.json({ error: 'Tenant non trouvé' }, { status: 404 });
+    if (!hasPermission(role, 'edit_settings')) {
+      throw ApiErrors.Forbidden('Permission requise: edit_settings');
     }
 
-    // Verify ownership
     const existing = await prisma.paymentTerm.findFirst({
       where: {
-        id: id,
+        id,
         tenant_id: tenantId,
       },
     });
 
     if (!existing) {
-      return NextResponse.json({ error: 'Condition de paiement non trouvée' }, { status: 404 });
+      throw ApiErrors.NotFound('Condition de paiement');
     }
 
     // Prevent deletion of default term
     if (existing.is_default) {
-      return NextResponse.json(
-        { error: 'Impossible de supprimer la condition de paiement par défaut' },
-        { status: 400 }
-      );
+      throw ApiErrors.BadRequest('Impossible de supprimer la condition de paiement par défaut');
     }
 
     await prisma.paymentTerm.delete({
-      where: { id: id },
+      where: { id },
     });
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error('Error deleting payment term:', error);
-    return NextResponse.json(
-      { error: 'Erreur lors de la suppression de la condition de paiement' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: `/api/settings/payment-terms/${id}`,
+      method: 'DELETE',
+    });
   }
 }

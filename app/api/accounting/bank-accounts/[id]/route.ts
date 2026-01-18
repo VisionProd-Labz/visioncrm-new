@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getCurrentTenantId, requireTenantId } from '@/lib/tenant';
-import { bankAccountSchema } from '@/lib/accounting/validations';
-import { z } from 'zod';
-import { requirePermission } from '@/lib/middleware/require-permission';
+import { ApiErrors, handleApiError } from '@/lib/api/error-handler';
+import { auth } from '@/auth';
+import { hasPermission, type Role } from '@/lib/permissions';
 
 // Force dynamic rendering - no static optimization
 export const dynamic = 'force-dynamic';
@@ -12,21 +11,27 @@ export const runtime = 'nodejs';
 /**
  * GET /api/accounting/bank-accounts/[id]
  * Get a specific bank account
+ *
+ * ✅ REFACTORED: Using centralized error handler
  */
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
+
   try {
-    const { id } = await params;
+    const session = await auth();
+    if (!session?.user) {
+      throw ApiErrors.Unauthorized();
+    }
 
-    // ✅ SECURITY FIX #3: RBAC permission check
-    const permError = await requirePermission('view_bank_accounts');
-    if (permError) return permError;
+    const user = session.user as any;
+    const role = user.role as Role;
+    const tenantId = user.tenantId as string;
 
-    const tenantId = await requireTenantId();
-    if (!tenantId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    if (!hasPermission(role, 'view_bank_accounts')) {
+      throw ApiErrors.Forbidden('Permission requise: view_bank_accounts');
     }
 
     const account = await prisma.bankAccount.findFirst({
@@ -50,44 +55,47 @@ export async function GET(
     });
 
     if (!account) {
-      return NextResponse.json({ error: 'Compte introuvable' }, { status: 404 });
+      throw ApiErrors.NotFound('Compte');
     }
 
     return NextResponse.json({ account });
   } catch (error) {
-    console.error('Error fetching bank account:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch bank account' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: `/api/accounting/bank-accounts/${id}`,
+      method: 'GET',
+    });
   }
 }
 
 /**
  * PATCH /api/accounting/bank-accounts/[id]
  * Update a bank account
+ *
+ * ✅ REFACTORED: Using centralized error handler
  */
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
+
   try {
-    const { id } = await params;
+    const session = await auth();
+    if (!session?.user) {
+      throw ApiErrors.Unauthorized();
+    }
 
-    // ✅ SECURITY FIX #3: RBAC permission check
-    const permError = await requirePermission('edit_bank_accounts');
-    if (permError) return permError;
+    const user = session.user as any;
+    const role = user.role as Role;
+    const tenantId = user.tenantId as string;
 
-    const tenantId = await requireTenantId();
-    if (!tenantId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    if (!hasPermission(role, 'edit_bank_accounts')) {
+      throw ApiErrors.Forbidden('Permission requise: edit_bank_accounts');
     }
 
     const body = await req.json();
-    // For PATCH, we validate that the provided fields are valid, but don't require all fields
     const data = body;
 
-    // Check if account exists and belongs to tenant
     const existing = await prisma.bankAccount.findFirst({
       where: {
         id,
@@ -97,10 +105,9 @@ export async function PATCH(
     });
 
     if (!existing) {
-      return NextResponse.json({ error: 'Compte introuvable' }, { status: 404 });
+      throw ApiErrors.NotFound('Compte');
     }
 
-    // If changing account number, check for duplicates
     if (data.account_number && data.account_number !== existing.account_number) {
       const duplicate = await prisma.bankAccount.findFirst({
         where: {
@@ -112,10 +119,7 @@ export async function PATCH(
       });
 
       if (duplicate) {
-        return NextResponse.json(
-          { error: 'Un compte avec ce numéro existe déjà' },
-          { status: 400 }
-        );
+        throw ApiErrors.BadRequest('Un compte avec ce numéro existe déjà');
       }
     }
 
@@ -134,41 +138,39 @@ export async function PATCH(
 
     return NextResponse.json(account);
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'Données invalides', details: error.errors },
-        { status: 400 }
-      );
-    }
-    console.error('Error updating bank account:', error);
-    return NextResponse.json(
-      { error: 'Failed to update bank account' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: `/api/accounting/bank-accounts/${id}`,
+      method: 'PATCH',
+    });
   }
 }
 
 /**
  * DELETE /api/accounting/bank-accounts/[id]
  * Soft delete a bank account
+ *
+ * ✅ REFACTORED: Using centralized error handler
  */
 export async function DELETE(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
+
   try {
-    const { id } = await params;
-
-    // ✅ SECURITY FIX #3: RBAC permission check
-    const permError = await requirePermission('delete_bank_accounts');
-    if (permError) return permError;
-
-    const tenantId = await requireTenantId();
-    if (!tenantId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const session = await auth();
+    if (!session?.user) {
+      throw ApiErrors.Unauthorized();
     }
 
-    // Check if account exists and belongs to tenant
+    const user = session.user as any;
+    const role = user.role as Role;
+    const tenantId = user.tenantId as string;
+
+    if (!hasPermission(role, 'delete_bank_accounts')) {
+      throw ApiErrors.Forbidden('Permission requise: delete_bank_accounts');
+    }
+
     const existing = await prisma.bankAccount.findFirst({
       where: {
         id,
@@ -185,18 +187,13 @@ export async function DELETE(
     });
 
     if (!existing) {
-      return NextResponse.json({ error: 'Compte introuvable' }, { status: 404 });
+      throw ApiErrors.NotFound('Compte');
     }
 
-    // Prevent deletion if there are pending transactions
     if (existing._count.transactions > 0) {
-      return NextResponse.json(
-        { error: 'Impossible de supprimer un compte avec des transactions en attente' },
-        { status: 400 }
-      );
+      throw ApiErrors.BadRequest('Impossible de supprimer un compte avec des transactions en attente');
     }
 
-    // Soft delete
     await prisma.bankAccount.update({
       where: { id },
       data: { deleted_at: new Date() },
@@ -204,10 +201,9 @@ export async function DELETE(
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error('Error deleting bank account:', error);
-    return NextResponse.json(
-      { error: 'Failed to delete bank account' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: `/api/accounting/bank-accounts/${id}`,
+      method: 'DELETE',
+    });
   }
 }

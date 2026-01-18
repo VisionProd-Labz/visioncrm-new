@@ -1,8 +1,8 @@
-import { NextResponse } from 'next/server';
-import { requirePermission } from '@/lib/middleware/require-permission';
-import { auth } from '@/auth';
+import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getCurrentTenantId, requireTenantId } from '@/lib/tenant';
+import { ApiErrors, handleApiError } from '@/lib/api/error-handler';
+import { auth } from '@/auth';
+import { hasPermission, type Role } from '@/lib/permissions';
 import { z } from 'zod';
 
 const taskCategoryUpdateSchema = z.object({
@@ -14,38 +14,44 @@ const taskCategoryUpdateSchema = z.object({
   sort_order: z.number().optional(),
 });
 
-// PATCH /api/settings/task-categories/[id]
+/**
+ * PATCH /api/settings/task-categories/:id
+ * Update task category
+ *
+ * ✅ REFACTORED: Using centralized error handler
+ */
 export async function PATCH(
-  req: Request,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
+
   try {
     const session = await auth();
-
     if (!session?.user) {
-      return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
+      throw ApiErrors.Unauthorized();
     }
 
-    const tenantId = await requireTenantId();
+    const user = session.user as any;
+    const role = user.role as Role;
+    const tenantId = user.tenantId as string;
 
-    if (!tenantId) {
-      return NextResponse.json({ error: 'Tenant non trouvé' }, { status: 404 });
+    if (!hasPermission(role, 'edit_settings')) {
+      throw ApiErrors.Forbidden('Permission requise: edit_settings');
     }
 
-    const { id } = await params;
     const body = await req.json();
     const data = taskCategoryUpdateSchema.parse(body);
 
-    // Verify ownership
     const existing = await prisma.taskCategory.findFirst({
       where: {
-        id: id,
+        id,
         tenant_id: tenantId,
       },
     });
 
     if (!existing) {
-      return NextResponse.json({ error: 'Catégorie de tâche non trouvée' }, { status: 404 });
+      throw ApiErrors.NotFound('Catégorie de tâche');
     }
 
     // If setting as default, unset other defaults
@@ -62,74 +68,70 @@ export async function PATCH(
     }
 
     const category = await prisma.taskCategory.update({
-      where: { id: id },
+      where: { id },
       data,
     });
 
     return NextResponse.json(category);
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json({ error: error.errors }, { status: 400 });
-    }
-
-    console.error('Error updating task category:', error);
-    return NextResponse.json(
-      { error: 'Erreur lors de la mise à jour de la catégorie de tâche' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: `/api/settings/task-categories/${id}`,
+      method: 'PATCH',
+    });
   }
 }
 
-// DELETE /api/settings/task-categories/[id]
+/**
+ * DELETE /api/settings/task-categories/:id
+ * Delete task category
+ *
+ * ✅ REFACTORED: Using centralized error handler
+ */
 export async function DELETE(
-  req: Request,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
 
   try {
     const session = await auth();
-
     if (!session?.user) {
-      return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
+      throw ApiErrors.Unauthorized();
     }
 
-    const tenantId = await requireTenantId();
+    const user = session.user as any;
+    const role = user.role as Role;
+    const tenantId = user.tenantId as string;
 
-    if (!tenantId) {
-      return NextResponse.json({ error: 'Tenant non trouvé' }, { status: 404 });
+    if (!hasPermission(role, 'edit_settings')) {
+      throw ApiErrors.Forbidden('Permission requise: edit_settings');
     }
 
-    // Verify ownership
     const existing = await prisma.taskCategory.findFirst({
       where: {
-        id: id,
+        id,
         tenant_id: tenantId,
       },
     });
 
     if (!existing) {
-      return NextResponse.json({ error: 'Catégorie de tâche non trouvée' }, { status: 404 });
+      throw ApiErrors.NotFound('Catégorie de tâche');
     }
 
     // Prevent deletion of default category
     if (existing.is_default) {
-      return NextResponse.json(
-        { error: 'Impossible de supprimer la catégorie de tâche par défaut' },
-        { status: 400 }
-      );
+      throw ApiErrors.BadRequest('Impossible de supprimer la catégorie de tâche par défaut');
     }
 
     await prisma.taskCategory.delete({
-      where: { id: id },
+      where: { id },
     });
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error('Error deleting task category:', error);
-    return NextResponse.json(
-      { error: 'Erreur lors de la suppression de la catégorie de tâche' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: `/api/settings/task-categories/${id}`,
+      method: 'DELETE',
+    });
   }
 }

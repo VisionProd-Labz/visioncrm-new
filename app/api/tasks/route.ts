@@ -1,23 +1,32 @@
 import { NextResponse } from 'next/server';
-import { requirePermission } from '@/lib/middleware/require-permission';
 import { prisma } from '@/lib/prisma';
-import { getCurrentTenantId, requireTenantId } from '@/lib/tenant';
 import { taskSchema } from '@/lib/validations';
-import { z } from 'zod';
+import { ApiErrors, handleApiError } from '@/lib/api/error-handler';
+import { auth } from '@/auth';
+import { hasPermission, type Role } from '@/lib/permissions';
 
 /**
  * GET /api/tasks
  * List tasks with filters
+ *
+ * ✅ REFACTORED: Using centralized error handler
  */
 export async function GET(req: Request) {
   try {
-    // ✅ SECURITY FIX #3: Permission check
-    const permError = await requirePermission('view_tasks');
-    if (permError) return permError;
+    const session = await auth();
+    if (!session?.user) {
+      throw ApiErrors.Unauthorized();
+    }
 
-    const tenantId = await requireTenantId();
+    const user = session.user as any;
+    const role = user.role as Role;
+    const tenantId = user.tenantId as string;
+
+    if (!hasPermission(role, 'view_tasks')) {
+      throw ApiErrors.Forbidden('Permission requise: view_tasks');
+    }
+
     const { searchParams } = new URL(req.url);
-
     const status = searchParams.get('status');
     const assigneeId = searchParams.get('assignee_id');
     const contactId = searchParams.get('contact_id');
@@ -66,27 +75,37 @@ export async function GET(req: Request) {
 
     return NextResponse.json({ tasks });
   } catch (error) {
-    console.error('Get tasks error:', error);
-    return NextResponse.json(
-      { error: 'Erreur lors de la récupération des tâches' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: '/api/tasks',
+      method: 'GET',
+    });
   }
 }
 
 /**
  * POST /api/tasks
  * Create a new task
+ *
+ * ✅ REFACTORED: Using centralized error handler
  */
 export async function POST(req: Request) {
   try {
-    const tenantId = await requireTenantId();
-    const body = await req.json();
+    const session = await auth();
+    if (!session?.user) {
+      throw ApiErrors.Unauthorized();
+    }
 
-    // Validate input
+    const user = session.user as any;
+    const role = user.role as Role;
+    const tenantId = user.tenantId as string;
+
+    if (!hasPermission(role, 'create_tasks')) {
+      throw ApiErrors.Forbidden('Permission requise: create_tasks');
+    }
+
+    const body = await req.json();
     const data = taskSchema.parse(body);
 
-    // Create task
     const task = await prisma.task.create({
       data: {
         tenant_id: tenantId,
@@ -119,17 +138,9 @@ export async function POST(req: Request) {
 
     return NextResponse.json(task, { status: 201 });
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'Données invalides', details: error.errors },
-        { status: 400 }
-      );
-    }
-
-    console.error('Create task error:', error);
-    return NextResponse.json(
-      { error: 'Erreur lors de la création de la tâche' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: '/api/tasks',
+      method: 'POST',
+    });
   }
 }

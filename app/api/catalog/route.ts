@@ -1,17 +1,9 @@
 import { NextResponse } from 'next/server';
-import { requirePermission } from '@/lib/middleware/require-permission';
 import { prisma } from '@/lib/prisma';
-import { getCurrentTenantId, requireTenantId } from '@/lib/tenant';
+import { ApiErrors, handleApiError } from '@/lib/api/error-handler';
+import { auth } from '@/auth';
+import { hasPermission, type Role } from '@/lib/permissions';
 import { z } from 'zod';
-
-// Helper to get tenant ID or fail
-async function getTenantIdOrFail() {
-  const tenantId = await requireTenantId();
-  if (!tenantId) {
-    throw new Error('UNAUTHORIZED');
-  }
-  return tenantId;
-}
 
 const catalogItemSchema = z.object({
   name: z.string().min(1).max(255),
@@ -29,23 +21,31 @@ const catalogItemSchema = z.object({
 /**
  * GET /api/catalog
  * List catalog items with filters
+ *
+ * ✅ REFACTORED: Using centralized error handler
  */
 export async function GET(req: Request) {
   try {
-    // ✅ SECURITY FIX #3: Permission check
-    const permError = await requirePermission('view_catalog');
-    if (permError) return permError;
+    const session = await auth();
+    if (!session?.user) {
+      throw ApiErrors.Unauthorized();
+    }
 
-    const tenantId = await getTenantIdOrFail();
+    const user = session.user as any;
+    const role = user.role as Role;
+    const tenantId = user.tenantId as string;
+
+    if (!hasPermission(role, 'view_catalog')) {
+      throw ApiErrors.Forbidden('Permission requise: view_catalog');
+    }
+
     const { searchParams } = new URL(req.url);
-
     const search = searchParams.get('search') || '';
     const category = searchParams.get('category') || '';
     const page = parseInt(searchParams.get('page') || '1');
     const limit = parseInt(searchParams.get('limit') || '50');
     const skip = (page - 1) * limit;
 
-    // Build where clause
     const where: any = {
       tenant_id: tenantId,
       deleted_at: null,
@@ -63,7 +63,6 @@ export async function GET(req: Request) {
       where.category = category;
     }
 
-    // Get catalog items with pagination
     const [items, total] = await Promise.all([
       prisma.catalogItem.findMany({
         where,
@@ -84,27 +83,37 @@ export async function GET(req: Request) {
       },
     });
   } catch (error) {
-    console.error('Get catalog items error:', error);
-    return NextResponse.json(
-      { error: 'Erreur lors de la récupération du catalogue' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: '/api/catalog',
+      method: 'GET',
+    });
   }
 }
 
 /**
  * POST /api/catalog
  * Create a new catalog item
+ *
+ * ✅ REFACTORED: Using centralized error handler
  */
 export async function POST(req: Request) {
   try {
-    const tenantId = await getTenantIdOrFail();
-    const body = await req.json();
+    const session = await auth();
+    if (!session?.user) {
+      throw ApiErrors.Unauthorized();
+    }
 
-    // Validate input
+    const user = session.user as any;
+    const role = user.role as Role;
+    const tenantId = user.tenantId as string;
+
+    if (!hasPermission(role, 'edit_catalog')) {
+      throw ApiErrors.Forbidden('Permission requise: edit_catalog');
+    }
+
+    const body = await req.json();
     const data = catalogItemSchema.parse(body);
 
-    // Check for duplicate reference
     const existing = await prisma.catalogItem.findFirst({
       where: {
         tenant_id: tenantId,
@@ -114,13 +123,9 @@ export async function POST(req: Request) {
     });
 
     if (existing) {
-      return NextResponse.json(
-        { error: 'Un produit avec cette référence existe déjà' },
-        { status: 400 }
-      );
+      throw ApiErrors.BadRequest('Un produit avec cette référence existe déjà');
     }
 
-    // Create catalog item
     const item = await prisma.catalogItem.create({
       data: {
         ...data,
@@ -130,17 +135,9 @@ export async function POST(req: Request) {
 
     return NextResponse.json(item, { status: 201 });
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'Données invalides', details: error.errors },
-        { status: 400 }
-      );
-    }
-
-    console.error('Create catalog item error:', error);
-    return NextResponse.json(
-      { error: 'Erreur lors de la création du produit' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: '/api/catalog',
+      method: 'POST',
+    });
   }
 }

@@ -1,24 +1,32 @@
 import { NextResponse } from 'next/server';
-import { requirePermission } from '@/lib/middleware/require-permission';
 import { prisma } from '@/lib/prisma';
-import { getCurrentTenantId, requireTenantId } from '@/lib/tenant';
 import { contactSchema } from '@/lib/validations';
-import { z } from 'zod';
+import { ApiErrors, handleApiError } from '@/lib/api/error-handler';
+import { auth } from '@/auth';
+import { hasPermission, type Role } from '@/lib/permissions';
 
 /**
  * GET /api/contacts
  * List contacts with pagination and filters
+ *
+ * ✅ REFACTORED: Using centralized error handler
  */
 export async function GET(req: Request) {
   try {
-    // ✅ SECURITY FIX #3: Permission check
-    const permError = await requirePermission('view_contacts');
-    if (permError) return permError;
-
-    const tenantId = await requireTenantId();
-    if (!tenantId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    // Get session and check permission
+    const session = await auth();
+    if (!session?.user) {
+      throw ApiErrors.Unauthorized();
     }
+
+    const user = session.user as any;
+    const role = user.role as Role;
+    const tenantId = user.tenantId as string;
+
+    if (!hasPermission(role, 'view_contacts')) {
+      throw ApiErrors.Forbidden('Permission requise: view_contacts');
+    }
+
     const { searchParams } = new URL(req.url);
 
     const page = parseInt(searchParams.get('page') || '1');
@@ -78,27 +86,35 @@ export async function GET(req: Request) {
       },
     });
   } catch (error) {
-    console.error('Get contacts error:', error);
-    return NextResponse.json(
-      { error: 'Erreur lors de la récupération des contacts' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: '/api/contacts',
+      method: 'GET',
+    });
   }
 }
 
 /**
  * POST /api/contacts
  * Create a new contact
+ *
+ * ✅ REFACTORED: Using centralized error handler
  */
 export async function POST(req: Request) {
   try {
-    const tenantId = await requireTenantId();
-    if (!tenantId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const session = await auth();
+    if (!session?.user) {
+      throw ApiErrors.Unauthorized();
     }
-    const body = await req.json();
 
-    // Validate input
+    const user = session.user as any;
+    const role = user.role as Role;
+    const tenantId = user.tenantId as string;
+
+    if (!hasPermission(role, 'create_contacts')) {
+      throw ApiErrors.Forbidden('Permission requise: create_contacts');
+    }
+
+    const body = await req.json();
     const data = contactSchema.parse(body);
 
     // Check for duplicate email
@@ -112,10 +128,7 @@ export async function POST(req: Request) {
       });
 
       if (existing) {
-        return NextResponse.json(
-          { error: 'Un contact avec cet email existe déjà' },
-          { status: 400 }
-        );
+        throw ApiErrors.Conflict('Un contact avec cet email existe déjà');
       }
     }
 
@@ -129,17 +142,9 @@ export async function POST(req: Request) {
 
     return NextResponse.json(contact, { status: 201 });
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'Données invalides', details: error.errors },
-        { status: 400 }
-      );
-    }
-
-    console.error('Create contact error:', error);
-    return NextResponse.json(
-      { error: 'Erreur lors de la création du contact' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: '/api/contacts',
+      method: 'POST',
+    });
   }
 }

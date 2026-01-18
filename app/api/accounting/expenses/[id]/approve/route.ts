@@ -1,35 +1,35 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getCurrentTenantId, requireTenantId } from '@/lib/tenant';
+import { ApiErrors, handleApiError } from '@/lib/api/error-handler';
 import { auth } from '@/auth';
-import { requirePermission } from '@/lib/middleware/require-permission';
+import { hasPermission, type Role } from '@/lib/permissions';
 
 /**
  * POST /api/accounting/expenses/[id]/approve
  * Approve an expense
+ *
+ * ✅ REFACTORED: Using centralized error handler
  */
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
+
   try {
-    const { id } = await params;
-
-    // ✅ SECURITY FIX #3: RBAC permission check
-    const permError = await requirePermission('approve_expenses');
-    if (permError) return permError;
-
-    const tenantId = await requireTenantId();
-    if (!tenantId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
     const session = await auth();
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    if (!session?.user) {
+      throw ApiErrors.Unauthorized();
     }
 
-    // Check if expense exists and belongs to tenant
+    const user = session.user as any;
+    const role = user.role as Role;
+    const tenantId = user.tenantId as string;
+
+    if (!hasPermission(role, 'approve_expenses')) {
+      throw ApiErrors.Forbidden('Permission requise: approve_expenses');
+    }
+
     const existing = await prisma.expense.findFirst({
       where: {
         id,
@@ -39,23 +39,18 @@ export async function POST(
     });
 
     if (!existing) {
-      return NextResponse.json({ error: 'Dépense introuvable' }, { status: 404 });
+      throw ApiErrors.NotFound('Dépense');
     }
 
-    // Check if already approved or paid
     if (existing.status === 'APPROVED' || existing.status === 'PAID') {
-      return NextResponse.json(
-        { error: 'Cette dépense est déjà approuvée ou payée' },
-        { status: 400 }
-      );
+      throw ApiErrors.BadRequest('Cette dépense est déjà approuvée ou payée');
     }
 
-    // Approve the expense
     const expense = await prisma.expense.update({
       where: { id },
       data: {
         status: 'APPROVED',
-        approved_by: session.user.id,
+        approved_by: user.id,
         approved_at: new Date(),
       },
       include: {
@@ -72,10 +67,9 @@ export async function POST(
 
     return NextResponse.json(expense);
   } catch (error) {
-    console.error('Error approving expense:', error);
-    return NextResponse.json(
-      { error: 'Failed to approve expense' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: `/api/accounting/expenses/${id}/approve`,
+      method: 'POST',
+    });
   }
 }

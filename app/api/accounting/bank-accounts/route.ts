@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getCurrentTenantId, requireTenantId } from '@/lib/tenant';
+import { ApiErrors, handleApiError } from '@/lib/api/error-handler';
+import { auth } from '@/auth';
+import { hasPermission, type Role } from '@/lib/permissions';
 import { bankAccountSchema } from '@/lib/accounting/validations';
-import { z } from 'zod';
-import { requirePermission } from '@/lib/middleware/require-permission';
 
 // Force dynamic rendering - no static optimization
 export const dynamic = 'force-dynamic';
@@ -12,16 +12,22 @@ export const runtime = 'nodejs';
 /**
  * GET /api/accounting/bank-accounts
  * Get all bank accounts for current tenant
+ *
+ * ✅ REFACTORED: Using centralized error handler
  */
 export async function GET(req: NextRequest) {
   try {
-    // ✅ SECURITY FIX #3: Permission check
-    const permError = await requirePermission('view_bank_accounts');
-    if (permError) return permError;
+    const session = await auth();
+    if (!session?.user) {
+      throw ApiErrors.Unauthorized();
+    }
 
-    const tenantId = await requireTenantId();
-    if (!tenantId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const user = session.user as any;
+    const role = user.role as Role;
+    const tenantId = user.tenantId as string;
+
+    if (!hasPermission(role, 'view_bank_accounts')) {
+      throw ApiErrors.Forbidden('Permission requise: view_bank_accounts');
     }
 
     const { searchParams } = new URL(req.url);
@@ -48,29 +54,37 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ accounts });
   } catch (error) {
-    console.error('Error fetching bank accounts:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch bank accounts' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: '/api/accounting/bank-accounts',
+      method: 'GET',
+    });
   }
 }
 
 /**
  * POST /api/accounting/bank-accounts
  * Create a new bank account
+ *
+ * ✅ REFACTORED: Using centralized error handler
  */
 export async function POST(req: NextRequest) {
   try {
-    const tenantId = await requireTenantId();
-    if (!tenantId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const session = await auth();
+    if (!session?.user) {
+      throw ApiErrors.Unauthorized();
+    }
+
+    const user = session.user as any;
+    const role = user.role as Role;
+    const tenantId = user.tenantId as string;
+
+    if (!hasPermission(role, 'create_bank_accounts')) {
+      throw ApiErrors.Forbidden('Permission requise: create_bank_accounts');
     }
 
     const body = await req.json();
     const data = bankAccountSchema.parse(body);
 
-    // Check if account number already exists for this tenant
     const existing = await prisma.bankAccount.findFirst({
       where: {
         tenant_id: tenantId,
@@ -80,10 +94,7 @@ export async function POST(req: NextRequest) {
     });
 
     if (existing) {
-      return NextResponse.json(
-        { error: 'Un compte avec ce numéro existe déjà' },
-        { status: 400 }
-      );
+      throw ApiErrors.BadRequest('Un compte avec ce numéro existe déjà');
     }
 
     const account = await prisma.bankAccount.create({
@@ -103,16 +114,9 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(account, { status: 201 });
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'Données invalides', details: error.errors },
-        { status: 400 }
-      );
-    }
-    console.error('Error creating bank account:', error);
-    return NextResponse.json(
-      { error: 'Failed to create bank account' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: '/api/accounting/bank-accounts',
+      method: 'POST',
+    });
   }
 }

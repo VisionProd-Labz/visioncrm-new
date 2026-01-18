@@ -1,24 +1,31 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@/auth';
 import { prisma } from '@/lib/prisma';
-import { requireTenantId } from '@/lib/tenant';
-import { requirePermission } from '@/lib/middleware/require-permission';
-
-// Utility function to get current tenant ID
+import { ApiErrors, handleApiError } from '@/lib/api/error-handler';
+import { auth } from '@/auth';
+import { hasPermission, type Role } from '@/lib/permissions';
 
 /**
  * GET /api/accounting/reports
  * List all financial reports for the current tenant
+ *
+ * ✅ REFACTORED: Using centralized error handler
  */
 export async function GET(req: NextRequest) {
   try {
-    // ✅ SECURITY FIX #3: Permission check
-    const permError = await requirePermission('view_financial_reports');
-    if (permError) return permError;
+    const session = await auth();
+    if (!session?.user) {
+      throw ApiErrors.Unauthorized();
+    }
 
-    const tenantId = await requireTenantId();
+    const user = session.user as any;
+    const role = user.role as Role;
+    const tenantId = user.tenantId as string;
+
+    if (!hasPermission(role, 'view_financial_reports')) {
+      throw ApiErrors.Forbidden('Permission requise: view_financial_reports');
+    }
+
     const { searchParams } = new URL(req.url);
-
     const year = searchParams.get('year');
     const type = searchParams.get('type');
 
@@ -37,38 +44,43 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ reports });
   } catch (error) {
-    console.error('Error fetching financial reports:', error);
-    return NextResponse.json(
-      { error: 'Une erreur est survenue lors de la récupération des rapports' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: '/api/accounting/reports',
+      method: 'GET',
+    });
   }
 }
 
 /**
  * POST /api/accounting/reports
  * Create/generate a new financial report
+ *
+ * ✅ REFACTORED: Using centralized error handler
  */
 export async function POST(req: NextRequest) {
   try {
-    const tenantId = await requireTenantId();
     const session = await auth();
-    const body = await req.json();
-
-    const { report_type, year, period } = body;
-
-    // Validate required fields
-    if (!report_type || !year || !period) {
-      return NextResponse.json(
-        { error: 'Type de rapport, année et période requis' },
-        { status: 400 }
-      );
+    if (!session?.user) {
+      throw ApiErrors.Unauthorized();
     }
 
-    // Generate report data based on type
+    const user = session.user as any;
+    const role = user.role as Role;
+    const tenantId = user.tenantId as string;
+
+    if (!hasPermission(role, 'generate_financial_reports')) {
+      throw ApiErrors.Forbidden('Permission requise: generate_financial_reports');
+    }
+
+    const body = await req.json();
+    const { report_type, year, period } = body;
+
+    if (!report_type || !year || !period) {
+      throw ApiErrors.BadRequest('Type de rapport, année et période requis');
+    }
+
     const reportData = await generateReportData(tenantId, report_type, year, period);
 
-    // Create report record
     const { metadata, ...rest } = reportData;
     const report = await prisma.financialReport.create({
       data: {
@@ -82,11 +94,10 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(report, { status: 201 });
   } catch (error) {
-    console.error('Error creating financial report:', error);
-    return NextResponse.json(
-      { error: 'Une erreur est survenue lors de la création du rapport' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: '/api/accounting/reports',
+      method: 'POST',
+    });
   }
 }
 

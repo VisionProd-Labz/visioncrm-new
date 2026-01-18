@@ -1,17 +1,9 @@
 import { NextResponse } from 'next/server';
-import { requirePermission } from '@/lib/middleware/require-permission';
 import { prisma } from '@/lib/prisma';
-import { getCurrentTenantId, requireTenantId } from '@/lib/tenant';
+import { ApiErrors, handleApiError } from '@/lib/api/error-handler';
+import { auth } from '@/auth';
+import { hasPermission, type Role } from '@/lib/permissions';
 import { z } from 'zod';
-
-// Helper to get tenant ID or return 401
-async function getTenantIdOrFail() {
-  const tenantId = await requireTenantId();
-  if (!tenantId) {
-    throw new Error('UNAUTHORIZED');
-  }
-  return tenantId;
-}
 
 const updateSchema = z.object({
   name: z.string().min(1).max(255).optional(),
@@ -29,6 +21,8 @@ const updateSchema = z.object({
 /**
  * GET /api/catalog/[id]
  * Get a single catalog item
+ *
+ * ✅ REFACTORED: Using centralized error handler
  */
 export async function GET(
   req: Request,
@@ -37,7 +31,18 @@ export async function GET(
   const { id } = await params;
 
   try {
-    const tenantId = await getTenantIdOrFail();
+    const session = await auth();
+    if (!session?.user) {
+      throw ApiErrors.Unauthorized();
+    }
+
+    const user = session.user as any;
+    const role = user.role as Role;
+    const tenantId = user.tenantId as string;
+
+    if (!hasPermission(role, 'view_catalog')) {
+      throw ApiErrors.Forbidden('Permission requise: view_catalog');
+    }
 
     const item = await prisma.catalogItem.findFirst({
       where: {
@@ -48,25 +53,23 @@ export async function GET(
     });
 
     if (!item) {
-      return NextResponse.json(
-        { error: 'Produit non trouvé' },
-        { status: 404 }
-      );
+      throw ApiErrors.NotFound('Produit');
     }
 
     return NextResponse.json(item);
   } catch (error) {
-    console.error('Get catalog item error:', error);
-    return NextResponse.json(
-      { error: 'Erreur lors de la récupération du produit' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: `/api/catalog/${id}`,
+      method: 'GET',
+    });
   }
 }
 
 /**
  * PATCH /api/catalog/[id]
  * Update a catalog item
+ *
+ * ✅ REFACTORED: Using centralized error handler
  */
 export async function PATCH(
   req: Request,
@@ -75,13 +78,22 @@ export async function PATCH(
   const { id } = await params;
 
   try {
-    const tenantId = await getTenantIdOrFail();
-    const body = await req.json();
+    const session = await auth();
+    if (!session?.user) {
+      throw ApiErrors.Unauthorized();
+    }
 
-    // Validate input
+    const user = session.user as any;
+    const role = user.role as Role;
+    const tenantId = user.tenantId as string;
+
+    if (!hasPermission(role, 'edit_catalog')) {
+      throw ApiErrors.Forbidden('Permission requise: edit_catalog');
+    }
+
+    const body = await req.json();
     const data = updateSchema.parse(body);
 
-    // Check item exists
     const existing = await prisma.catalogItem.findFirst({
       where: {
         id,
@@ -91,13 +103,9 @@ export async function PATCH(
     });
 
     if (!existing) {
-      return NextResponse.json(
-        { error: 'Produit non trouvé' },
-        { status: 404 }
-      );
+      throw ApiErrors.NotFound('Produit');
     }
 
-    // Check for duplicate reference if changing it
     if (data.reference && data.reference !== existing.reference) {
       const duplicate = await prisma.catalogItem.findFirst({
         where: {
@@ -109,14 +117,10 @@ export async function PATCH(
       });
 
       if (duplicate) {
-        return NextResponse.json(
-          { error: 'Un produit avec cette référence existe déjà' },
-          { status: 400 }
-        );
+        throw ApiErrors.BadRequest('Un produit avec cette référence existe déjà');
       }
     }
 
-    // Update item
     const item = await prisma.catalogItem.update({
       where: { id: id },
       data,
@@ -124,24 +128,18 @@ export async function PATCH(
 
     return NextResponse.json(item);
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'Données invalides', details: error.errors },
-        { status: 400 }
-      );
-    }
-
-    console.error('Update catalog item error:', error);
-    return NextResponse.json(
-      { error: 'Erreur lors de la mise à jour du produit' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: `/api/catalog/${id}`,
+      method: 'PATCH',
+    });
   }
 }
 
 /**
  * DELETE /api/catalog/[id]
  * Soft delete a catalog item
+ *
+ * ✅ REFACTORED: Using centralized error handler
  */
 export async function DELETE(
   req: Request,
@@ -150,9 +148,19 @@ export async function DELETE(
   const { id } = await params;
 
   try {
-    const tenantId = await getTenantIdOrFail();
+    const session = await auth();
+    if (!session?.user) {
+      throw ApiErrors.Unauthorized();
+    }
 
-    // Check item exists
+    const user = session.user as any;
+    const role = user.role as Role;
+    const tenantId = user.tenantId as string;
+
+    if (!hasPermission(role, 'edit_catalog')) {
+      throw ApiErrors.Forbidden('Permission requise: edit_catalog');
+    }
+
     const existing = await prisma.catalogItem.findFirst({
       where: {
         id,
@@ -162,13 +170,9 @@ export async function DELETE(
     });
 
     if (!existing) {
-      return NextResponse.json(
-        { error: 'Produit non trouvé' },
-        { status: 404 }
-      );
+      throw ApiErrors.NotFound('Produit');
     }
 
-    // Soft delete
     await prisma.catalogItem.update({
       where: { id: id },
       data: { deleted_at: new Date() },
@@ -176,10 +180,9 @@ export async function DELETE(
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error('Delete catalog item error:', error);
-    return NextResponse.json(
-      { error: 'Erreur lors de la suppression du produit' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: `/api/catalog/${id}`,
+      method: 'DELETE',
+    });
   }
 }

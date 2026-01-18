@@ -1,27 +1,34 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@/auth';
 import { prisma } from '@/lib/prisma';
-import { requireTenantId } from '@/lib/tenant';
-import { litigationSchema } from '@/lib/accounting/validations';
-import { z } from 'zod';
-import { requirePermission } from '@/lib/middleware/require-permission';
+import { ApiErrors, handleApiError } from '@/lib/api/error-handler';
+import { auth } from '@/auth';
+import { hasPermission, type Role } from '@/lib/permissions';
 
 /**
  * GET /api/accounting/litigation/[id]
  * Get a single litigation case by ID
+ *
+ * ✅ REFACTORED: Using centralized error handler
  */
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
+
   try {
-    const { id } = await params;
+    const session = await auth();
+    if (!session?.user) {
+      throw ApiErrors.Unauthorized();
+    }
 
-    // ✅ SECURITY FIX #3: RBAC permission check
-    const permError = await requirePermission('view_litigation');
-    if (permError) return permError;
+    const user = session.user as any;
+    const role = user.role as Role;
+    const tenantId = user.tenantId as string;
 
-    const tenantId = await requireTenantId();
+    if (!hasPermission(role, 'view_litigation')) {
+      throw ApiErrors.Forbidden('Permission requise: view_litigation');
+    }
 
     const litigationCase = await prisma.litigation.findFirst({
       where: {
@@ -32,45 +39,47 @@ export async function GET(
     });
 
     if (!litigationCase) {
-      return NextResponse.json(
-        { error: 'Litige non trouvé' },
-        { status: 404 }
-      );
+      throw ApiErrors.NotFound('Litige');
     }
 
     return NextResponse.json(litigationCase);
   } catch (error) {
-    console.error('Error fetching litigation case:', error);
-    return NextResponse.json(
-      { error: 'Une erreur est survenue lors de la récupération du litige' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: `/api/accounting/litigation/${id}`,
+      method: 'GET',
+    });
   }
 }
 
 /**
  * PATCH /api/accounting/litigation/[id]
  * Update a litigation case
+ *
+ * ✅ REFACTORED: Using centralized error handler
  */
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
+
   try {
-    const { id } = await params;
+    const session = await auth();
+    if (!session?.user) {
+      throw ApiErrors.Unauthorized();
+    }
 
-    // ✅ SECURITY FIX #3: RBAC permission check
-    const permError = await requirePermission('edit_litigation');
-    if (permError) return permError;
+    const user = session.user as any;
+    const role = user.role as Role;
+    const tenantId = user.tenantId as string;
 
-    const tenantId = await requireTenantId();
+    if (!hasPermission(role, 'edit_litigation')) {
+      throw ApiErrors.Forbidden('Permission requise: edit_litigation');
+    }
+
     const body = await req.json();
-
-    // Validate request body (partial update)
-    // For PATCH, we validate that the provided fields are valid, but don't require all fields
     const data = body;
 
-    // Check if case exists
     const existing = await prisma.litigation.findFirst({
       where: {
         id,
@@ -80,13 +89,9 @@ export async function PATCH(
     });
 
     if (!existing) {
-      return NextResponse.json(
-        { error: 'Litige non trouvé' },
-        { status: 404 }
-      );
+      throw ApiErrors.NotFound('Litige');
     }
 
-    // Update case
     const litigationCase = await prisma.litigation.update({
       where: { id },
       data,
@@ -94,39 +99,39 @@ export async function PATCH(
 
     return NextResponse.json(litigationCase);
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'Données invalides', details: error.errors },
-        { status: 400 }
-      );
-    }
-
-    console.error('Error updating litigation case:', error);
-    return NextResponse.json(
-      { error: 'Une erreur est survenue lors de la mise à jour du litige' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: `/api/accounting/litigation/${id}`,
+      method: 'PATCH',
+    });
   }
 }
 
 /**
  * DELETE /api/accounting/litigation/[id]
  * Soft delete a litigation case
+ *
+ * ✅ REFACTORED: Using centralized error handler
  */
 export async function DELETE(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
+
   try {
-    const { id } = await params;
+    const session = await auth();
+    if (!session?.user) {
+      throw ApiErrors.Unauthorized();
+    }
 
-    // ✅ SECURITY FIX #3: RBAC permission check
-    const permError = await requirePermission('delete_litigation');
-    if (permError) return permError;
+    const user = session.user as any;
+    const role = user.role as Role;
+    const tenantId = user.tenantId as string;
 
-    const tenantId = await requireTenantId();
+    if (!hasPermission(role, 'delete_litigation')) {
+      throw ApiErrors.Forbidden('Permission requise: delete_litigation');
+    }
 
-    // Check if case exists
     const existing = await prisma.litigation.findFirst({
       where: {
         id,
@@ -136,13 +141,9 @@ export async function DELETE(
     });
 
     if (!existing) {
-      return NextResponse.json(
-        { error: 'Litige non trouvé' },
-        { status: 404 }
-      );
+      throw ApiErrors.NotFound('Litige');
     }
 
-    // Soft delete
     await prisma.litigation.update({
       where: { id },
       data: { deleted_at: new Date() },
@@ -150,10 +151,9 @@ export async function DELETE(
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error('Error deleting litigation case:', error);
-    return NextResponse.json(
-      { error: 'Une erreur est survenue lors de la suppression du litige' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: `/api/accounting/litigation/${id}`,
+      method: 'DELETE',
+    });
   }
 }

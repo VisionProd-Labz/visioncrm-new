@@ -1,23 +1,29 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getCurrentTenantId, requireTenantId } from '@/lib/tenant';
+import { ApiErrors, handleApiError } from '@/lib/api/error-handler';
+import { auth } from '@/auth';
+import { hasPermission, type Role } from '@/lib/permissions';
 import { bankTransactionSchema, bulkTransactionImportSchema } from '@/lib/accounting/validations';
-import { z } from 'zod';
-import { requirePermission } from '@/lib/middleware/require-permission';
 
 /**
  * GET /api/accounting/transactions
  * Get bank transactions with filters
+ *
+ * ✅ REFACTORED: Using centralized error handler
  */
 export async function GET(req: NextRequest) {
   try {
-    // ✅ SECURITY FIX #3: Permission check
-    const permError = await requirePermission('view_bank_transactions');
-    if (permError) return permError;
+    const session = await auth();
+    if (!session?.user) {
+      throw ApiErrors.Unauthorized();
+    }
 
-    const tenantId = await requireTenantId();
-    if (!tenantId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const user = session.user as any;
+    const role = user.role as Role;
+    const tenantId = user.tenantId as string;
+
+    if (!hasPermission(role, 'view_bank_transactions')) {
+      throw ApiErrors.Forbidden('Permission requise: view_bank_transactions');
     }
 
     const { searchParams } = new URL(req.url);
@@ -70,36 +76,42 @@ export async function GET(req: NextRequest) {
       },
     });
   } catch (error) {
-    console.error('Error fetching transactions:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch transactions' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: '/api/accounting/transactions',
+      method: 'GET',
+    });
   }
 }
 
 /**
  * POST /api/accounting/transactions
  * Create a new transaction or bulk import
+ *
+ * ✅ REFACTORED: Using centralized error handler
  */
 export async function POST(req: NextRequest) {
   try {
-    const tenantId = await requireTenantId();
-    if (!tenantId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const session = await auth();
+    if (!session?.user) {
+      throw ApiErrors.Unauthorized();
+    }
+
+    const user = session.user as any;
+    const role = user.role as Role;
+    const tenantId = user.tenantId as string;
+
+    if (!hasPermission(role, 'create_bank_transactions')) {
+      throw ApiErrors.Forbidden('Permission requise: create_bank_transactions');
     }
 
     const body = await req.json();
 
-    // Check if bulk import
     if (body.transactions && Array.isArray(body.transactions)) {
       return handleBulkImport(tenantId, body);
     }
 
-    // Single transaction
     const data = bankTransactionSchema.parse(body);
 
-    // Verify account belongs to tenant
     const account = await prisma.bankAccount.findFirst({
       where: {
         id: data.account_id,
@@ -109,10 +121,7 @@ export async function POST(req: NextRequest) {
     });
 
     if (!account) {
-      return NextResponse.json(
-        { error: 'Compte bancaire introuvable' },
-        { status: 404 }
-      );
+      throw ApiErrors.NotFound('Compte bancaire');
     }
 
     const { metadata, ...rest } = data;
@@ -132,7 +141,6 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    // Update account balance
     const balanceChange = data.type === 'CREDIT' ? data.amount : -data.amount;
     await prisma.bankAccount.update({
       where: { id: data.account_id },
@@ -145,17 +153,10 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(transaction, { status: 201 });
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'Données invalides', details: error.errors },
-        { status: 400 }
-      );
-    }
-    console.error('Error creating transaction:', error);
-    return NextResponse.json(
-      { error: 'Failed to create transaction' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: '/api/accounting/transactions',
+      method: 'POST',
+    });
   }
 }
 
@@ -166,7 +167,6 @@ async function handleBulkImport(tenantId: string, body: any) {
   try {
     const data = bulkTransactionImportSchema.parse(body);
 
-    // Verify account belongs to tenant
     const account = await prisma.bankAccount.findFirst({
       where: {
         id: data.account_id,
@@ -176,13 +176,9 @@ async function handleBulkImport(tenantId: string, body: any) {
     });
 
     if (!account) {
-      return NextResponse.json(
-        { error: 'Compte bancaire introuvable' },
-        { status: 404 }
-      );
+      throw ApiErrors.NotFound('Compte bancaire');
     }
 
-    // Create all transactions
     const transactions = await prisma.$transaction(
       data.transactions.map((t) =>
         prisma.bankTransaction.create({
@@ -200,7 +196,6 @@ async function handleBulkImport(tenantId: string, body: any) {
       )
     );
 
-    // Update account balance
     const balanceChange = data.transactions.reduce((sum, t) => {
       return sum + (t.type === 'CREDIT' ? t.amount : -t.amount);
     }, 0);
@@ -220,12 +215,6 @@ async function handleBulkImport(tenantId: string, body: any) {
       transactions,
     }, { status: 201 });
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'Données invalides', details: error.errors },
-        { status: 400 }
-      );
-    }
     throw error;
   }
 }

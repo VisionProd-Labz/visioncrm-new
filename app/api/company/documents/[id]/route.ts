@@ -1,11 +1,14 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getCurrentTenantId, requireTenantId } from '@/lib/tenant';
-import { requirePermission } from '@/lib/middleware/require-permission';
+import { ApiErrors, handleApiError } from '@/lib/api/error-handler';
+import { auth } from '@/auth';
+import { hasPermission, type Role } from '@/lib/permissions';
 
 /**
  * DELETE /api/company/documents/[id]
  * Delete a document
+ *
+ * ✅ REFACTORED: Using centralized error handler
  */
 export async function DELETE(
   req: Request,
@@ -14,13 +17,19 @@ export async function DELETE(
   const { id } = await params;
 
   try {
-    // ✅ SECURITY FIX #3: RBAC permission check
-    const permError = await requirePermission('delete_company_documents');
-    if (permError) return permError;
+    const session = await auth();
+    if (!session?.user) {
+      throw ApiErrors.Unauthorized();
+    }
 
-    const tenantId = await requireTenantId();
+    const user = session.user as any;
+    const role = user.role as Role;
+    const tenantId = user.tenantId as string;
 
-    // Check document exists
+    if (!hasPermission(role, 'delete_company_documents')) {
+      throw ApiErrors.Forbidden('Permission requise: delete_company_documents');
+    }
+
     const existing = await prisma.document.findFirst({
       where: {
         id: id,
@@ -30,13 +39,9 @@ export async function DELETE(
     });
 
     if (!existing) {
-      return NextResponse.json(
-        { error: 'Document non trouvé' },
-        { status: 404 }
-      );
+      throw ApiErrors.NotFound('Document');
     }
 
-    // Soft delete
     await prisma.document.update({
       where: { id: id },
       data: { deleted_at: new Date() },
@@ -44,10 +49,9 @@ export async function DELETE(
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error('Delete document error:', error);
-    return NextResponse.json(
-      { error: 'Erreur lors de la suppression du document' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: `/api/company/documents/${id}`,
+      method: 'DELETE',
+    });
   }
 }

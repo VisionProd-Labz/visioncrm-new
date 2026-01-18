@@ -1,26 +1,28 @@
 import { NextResponse } from 'next/server';
-import { requirePermission } from '@/lib/middleware/require-permission';
-import { auth } from '@/auth';
 import { prisma } from '@/lib/prisma';
-import { getCurrentTenantId, requireTenantId } from '@/lib/tenant';
+import { ApiErrors, handleApiError } from '@/lib/api/error-handler';
+import { auth } from '@/auth';
+import { hasPermission, type Role } from '@/lib/permissions';
 
-// GET /api/team - List team members
+/**
+ * GET /api/team
+ * List team members
+ *
+ * ✅ REFACTORED: Using centralized error handler
+ */
 export async function GET(req: Request) {
   try {
-    // ✅ SECURITY FIX #3: Permission check
-    const permError = await requirePermission('view_team');
-    if (permError) return permError;
-
     const session = await auth();
-
     if (!session?.user) {
-      return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
+      throw ApiErrors.Unauthorized();
     }
 
-    const tenantId = await requireTenantId();
+    const user = session.user as any;
+    const role = user.role as Role;
+    const tenantId = user.tenantId as string;
 
-    if (!tenantId) {
-      return NextResponse.json({ error: 'Tenant non trouvé' }, { status: 404 });
+    if (!hasPermission(role, 'view_team')) {
+      throw ApiErrors.Forbidden('Permission requise: view_team');
     }
 
     // Get all team members for this tenant
@@ -77,10 +79,9 @@ export async function GET(req: Request) {
       total: members.length,
     });
   } catch (error) {
-    console.error('Error fetching team members:', error);
-    return NextResponse.json(
-      { error: 'Erreur lors de la récupération des membres' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: '/api/team',
+      method: 'GET',
+    });
   }
 }

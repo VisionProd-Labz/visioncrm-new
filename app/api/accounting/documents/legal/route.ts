@@ -1,25 +1,32 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireTenantId } from '@/lib/tenant';
-import { auth } from '@/auth';
 import { prisma } from '@/lib/prisma';
+import { ApiErrors, handleApiError } from '@/lib/api/error-handler';
+import { auth } from '@/auth';
+import { hasPermission, type Role } from '@/lib/permissions';
 import { legalDocumentSchema } from '@/lib/accounting/validations';
-import { z } from 'zod';
-import { requirePermission } from '@/lib/middleware/require-permission';
-
 
 /**
  * GET /api/accounting/documents/legal
  * List all legal documents for the current tenant
+ *
+ * ✅ REFACTORED: Using centralized error handler
  */
 export async function GET(req: NextRequest) {
   try {
-    // ✅ SECURITY FIX #3: Permission check
-    const permError = await requirePermission('view_legal_documents');
-    if (permError) return permError;
+    const session = await auth();
+    if (!session?.user) {
+      throw ApiErrors.Unauthorized();
+    }
 
-    const tenantId = await requireTenantId();
+    const user = session.user as any;
+    const role = user.role as Role;
+    const tenantId = user.tenantId as string;
+
+    if (!hasPermission(role, 'view_legal_documents')) {
+      throw ApiErrors.Forbidden('Permission requise: view_legal_documents');
+    }
+
     const { searchParams } = new URL(req.url);
-
     const year = searchParams.get('year');
     const type = searchParams.get('type');
 
@@ -29,7 +36,6 @@ export async function GET(req: NextRequest) {
     };
 
     if (year) {
-      // Filter by year using issue_date
       const yearStart = new Date(`${year}-01-01`);
       const yearEnd = new Date(`${year}-12-31`);
       where.issue_date = {
@@ -46,28 +52,37 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ documents });
   } catch (error) {
-    console.error('Error fetching legal documents:', error);
-    return NextResponse.json(
-      { error: 'Une erreur est survenue lors de la récupération des documents juridiques' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: '/api/accounting/documents/legal',
+      method: 'GET',
+    });
   }
 }
 
 /**
  * POST /api/accounting/documents/legal
  * Create a new legal document
+ *
+ * ✅ REFACTORED: Using centralized error handler
  */
 export async function POST(req: NextRequest) {
   try {
-    const tenantId = await requireTenantId();
     const session = await auth();
-    const body = await req.json();
+    if (!session?.user) {
+      throw ApiErrors.Unauthorized();
+    }
 
-    // Validate request body
+    const user = session.user as any;
+    const role = user.role as Role;
+    const tenantId = user.tenantId as string;
+
+    if (!hasPermission(role, 'upload_legal_documents')) {
+      throw ApiErrors.Forbidden('Permission requise: upload_legal_documents');
+    }
+
+    const body = await req.json();
     const data = legalDocumentSchema.parse(body);
 
-    // Create document
     const { metadata, ...rest } = data;
     const document = await prisma.legalDocument.create({
       data: {
@@ -79,17 +94,9 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(document, { status: 201 });
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'Données invalides', details: error.errors },
-        { status: 400 }
-      );
-    }
-
-    console.error('Error creating legal document:', error);
-    return NextResponse.json(
-      { error: 'Une erreur est survenue lors de la création du document' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: '/api/accounting/documents/legal',
+      method: 'POST',
+    });
   }
 }

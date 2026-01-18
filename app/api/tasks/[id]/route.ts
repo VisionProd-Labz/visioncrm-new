@@ -1,25 +1,38 @@
-import { NextResponse } from 'next/server';
-import { requirePermission } from '@/lib/middleware/require-permission';
+import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getCurrentTenantId, requireTenantId } from '@/lib/tenant';
-import { z } from 'zod';
+import { ApiErrors, handleApiError } from '@/lib/api/error-handler';
+import { auth } from '@/auth';
+import { hasPermission, type Role } from '@/lib/permissions';
 
 /**
  * GET /api/tasks/:id
  * Get a single task
+ *
+ * ✅ REFACTORED: Using centralized error handler
  */
 export async function GET(
-  req: Request,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
 
   try {
-    const tenantId = await requireTenantId();
+    const session = await auth();
+    if (!session?.user) {
+      throw ApiErrors.Unauthorized();
+    }
+
+    const user = session.user as any;
+    const role = user.role as Role;
+    const tenantId = user.tenantId as string;
+
+    if (!hasPermission(role, 'view_tasks')) {
+      throw ApiErrors.Forbidden('Permission requise: view_tasks');
+    }
 
     const task = await prisma.task.findFirst({
       where: {
-        id: id,
+        id,
         tenant_id: tenantId,
         deleted_at: null,
       },
@@ -45,53 +58,59 @@ export async function GET(
     });
 
     if (!task) {
-      return NextResponse.json(
-        { error: 'Tâche non trouvée' },
-        { status: 404 }
-      );
+      throw ApiErrors.NotFound('Tâche');
     }
 
     return NextResponse.json(task);
   } catch (error) {
-    console.error('Get task error:', error);
-    return NextResponse.json(
-      { error: 'Erreur lors de la récupération de la tâche' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: `/api/tasks/${id}`,
+      method: 'GET',
+    });
   }
 }
 
 /**
  * PATCH /api/tasks/:id
  * Update a task
+ *
+ * ✅ REFACTORED: Using centralized error handler
  */
 export async function PATCH(
-  req: Request,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
 
   try {
-    const tenantId = await requireTenantId();
+    const session = await auth();
+    if (!session?.user) {
+      throw ApiErrors.Unauthorized();
+    }
+
+    const user = session.user as any;
+    const role = user.role as Role;
+    const tenantId = user.tenantId as string;
+
+    if (!hasPermission(role, 'edit_tasks')) {
+      throw ApiErrors.Forbidden('Permission requise: edit_tasks');
+    }
+
     const body = await req.json();
 
-    // Check task exists
     const existing = await prisma.task.findFirst({
       where: {
-        id: id,
+        id,
         tenant_id: tenantId,
         deleted_at: null,
       },
     });
 
     if (!existing) {
-      return NextResponse.json(
-        { error: 'Tâche non trouvée' },
-        { status: 404 }
-      );
+      throw ApiErrors.NotFound('Tâche');
     }
 
-    // Update task
+    // Build update data
     const updateData: any = {};
 
     if (body.title !== undefined) updateData.title = body.title;
@@ -113,7 +132,7 @@ export async function PATCH(
     }
 
     const task = await prisma.task.update({
-      where: { id: id },
+      where: { id },
       data: updateData,
       include: {
         assignee: {
@@ -136,55 +155,61 @@ export async function PATCH(
 
     return NextResponse.json(task);
   } catch (error) {
-    console.error('Update task error:', error);
-    return NextResponse.json(
-      { error: 'Erreur lors de la mise à jour de la tâche' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: `/api/tasks/${id}`,
+      method: 'PATCH',
+    });
   }
 }
 
 /**
  * DELETE /api/tasks/:id
  * Soft delete a task
+ *
+ * ✅ REFACTORED: Using centralized error handler
  */
 export async function DELETE(
-  req: Request,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
 
   try {
-    const tenantId = await requireTenantId();
+    const session = await auth();
+    if (!session?.user) {
+      throw ApiErrors.Unauthorized();
+    }
 
-    // Check task exists
+    const user = session.user as any;
+    const role = user.role as Role;
+    const tenantId = user.tenantId as string;
+
+    if (!hasPermission(role, 'delete_tasks')) {
+      throw ApiErrors.Forbidden('Permission requise: delete_tasks');
+    }
+
     const existing = await prisma.task.findFirst({
       where: {
-        id: id,
+        id,
         tenant_id: tenantId,
         deleted_at: null,
       },
     });
 
     if (!existing) {
-      return NextResponse.json(
-        { error: 'Tâche non trouvée' },
-        { status: 404 }
-      );
+      throw ApiErrors.NotFound('Tâche');
     }
 
-    // Soft delete
     await prisma.task.update({
-      where: { id: id },
+      where: { id },
       data: { deleted_at: new Date() },
     });
 
     return NextResponse.json({ message: 'Tâche supprimée' });
   } catch (error) {
-    console.error('Delete task error:', error);
-    return NextResponse.json(
-      { error: 'Erreur lors de la suppression de la tâche' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: `/api/tasks/${id}`,
+      method: 'DELETE',
+    });
   }
 }

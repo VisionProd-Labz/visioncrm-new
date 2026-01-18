@@ -1,24 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getCurrentTenantId, requireTenantId } from '@/lib/tenant';
+import { ApiErrors, handleApiError } from '@/lib/api/error-handler';
 import { auth } from '@/auth';
+import { hasPermission, type Role } from '@/lib/permissions';
 import { expenseSchema } from '@/lib/accounting/validations';
-import { z } from 'zod';
-import { requirePermission } from '@/lib/middleware/require-permission';
+import { generateDocumentNumber } from '@/lib/utils/document-numbers';
 
 /**
  * GET /api/accounting/expenses
  * Get expenses with filters
+ *
+ * ✅ REFACTORED: Using centralized error handler
  */
 export async function GET(req: NextRequest) {
   try {
-    // ✅ SECURITY FIX #3: Permission check
-    const permError = await requirePermission('view_expenses');
-    if (permError) return permError;
+    const session = await auth();
+    if (!session?.user) {
+      throw ApiErrors.Unauthorized();
+    }
 
-    const tenantId = await requireTenantId();
-    if (!tenantId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const user = session.user as any;
+    const role = user.role as Role;
+    const tenantId = user.tenantId as string;
+
+    if (!hasPermission(role, 'view_expenses')) {
+      throw ApiErrors.Forbidden('Permission requise: view_expenses');
     }
 
     const { searchParams } = new URL(req.url);
@@ -74,23 +80,32 @@ export async function GET(req: NextRequest) {
       },
     });
   } catch (error) {
-    console.error('Error fetching expenses:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch expenses' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: '/api/accounting/expenses',
+      method: 'GET',
+    });
   }
 }
 
 /**
  * POST /api/accounting/expenses
  * Create a new expense
+ *
+ * ✅ REFACTORED: Using centralized error handler + shared utilities
  */
 export async function POST(req: NextRequest) {
   try {
-    const tenantId = await requireTenantId();
-    if (!tenantId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const session = await auth();
+    if (!session?.user) {
+      throw ApiErrors.Unauthorized();
+    }
+
+    const user = session.user as any;
+    const role = user.role as Role;
+    const tenantId = user.tenantId as string;
+
+    if (!hasPermission(role, 'create_expenses')) {
+      throw ApiErrors.Forbidden('Permission requise: create_expenses');
     }
 
     const body = await req.json();
@@ -107,18 +122,12 @@ export async function POST(req: NextRequest) {
       });
 
       if (!vendor) {
-        return NextResponse.json(
-          { error: 'Fournisseur introuvable' },
-          { status: 404 }
-        );
+        throw ApiErrors.NotFound('Fournisseur');
       }
     }
 
-    // Generate expense number
-    const count = await prisma.expense.count({
-      where: { tenant_id: tenantId },
-    });
-    const expense_number = `EXP-${new Date().getFullYear()}-${String(count + 1).padStart(5, '0')}`;
+    // Generate expense number using shared utility
+    const expense_number = await generateDocumentNumber(tenantId, 'expense');
 
     const { metadata, ...rest } = data;
     const expense = await prisma.expense.create({
@@ -143,16 +152,9 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(expense, { status: 201 });
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'Données invalides', details: error.errors },
-        { status: 400 }
-      );
-    }
-    console.error('Error creating expense:', error);
-    return NextResponse.json(
-      { error: 'Failed to create expense' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: '/api/accounting/expenses',
+      method: 'POST',
+    });
   }
 }

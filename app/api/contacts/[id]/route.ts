@@ -1,30 +1,40 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getCurrentTenantId, requireTenantId } from '@/lib/tenant';
 import { contactSchema } from '@/lib/validations';
-import { z } from 'zod';
-import { requirePermission } from '@/lib/middleware/require-permission';
+import { ApiErrors, handleApiError } from '@/lib/api/error-handler';
+import { auth } from '@/auth';
+import { hasPermission, type Role } from '@/lib/permissions';
 
 /**
  * GET /api/contacts/:id
  * Get a single contact
+ *
+ * ✅ REFACTORED: Using error handler (manual wrapper for Next.js 15 compat)
  */
 export async function GET(
-  req: Request,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
 
-  // ✅ SECURITY: Check permission FIRST
-  const permError = await requirePermission('view_contacts');
-  if (permError) return permError;
-
   try {
-    const tenantId = await requireTenantId();
+    // Get session and check permission
+    const session = await auth();
+    if (!session?.user) {
+      throw ApiErrors.Unauthorized();
+    }
+
+    const user = session.user as any;
+    const role = user.role as Role;
+    const tenantId = user.tenantId as string;
+
+    if (!hasPermission(role, 'view_contacts')) {
+      throw ApiErrors.Forbidden('Permission requise: view_contacts');
+    }
 
     const contact = await prisma.contact.findFirst({
       where: {
-        id: id,
+        id,
         tenant_id: tenantId,
         deleted_at: null,
       },
@@ -62,19 +72,15 @@ export async function GET(
     });
 
     if (!contact) {
-      return NextResponse.json(
-        { error: 'Contact non trouvé' },
-        { status: 404 }
-      );
+      throw ApiErrors.NotFound('Contact');
     }
 
     return NextResponse.json(contact);
   } catch (error) {
-    console.error('Get contact error:', error);
-    return NextResponse.json(
-      { error: 'Erreur lors de la récupération du contact' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: `/api/contacts/${id}`,
+      method: 'GET',
+    });
   }
 }
 
@@ -83,58 +89,51 @@ export async function GET(
  * Update a contact
  */
 export async function PATCH(
-  req: Request,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
 
-  // ✅ SECURITY: Check permission FIRST
-  const permError = await requirePermission('edit_contacts');
-  if (permError) return permError;
-
   try {
-    const tenantId = await requireTenantId();
-    const body = await req.json();
+    const session = await auth();
+    if (!session?.user) {
+      throw ApiErrors.Unauthorized();
+    }
 
-    // Validate input
+    const user = session.user as any;
+    const role = user.role as Role;
+    const tenantId = user.tenantId as string;
+
+    if (!hasPermission(role, 'edit_contacts')) {
+      throw ApiErrors.Forbidden('Permission requise: edit_contacts');
+    }
+
+    const body = await req.json();
     const data = contactSchema.partial().parse(body);
 
-    // Check contact exists
     const existing = await prisma.contact.findFirst({
       where: {
-        id: id,
+        id,
         tenant_id: tenantId,
         deleted_at: null,
       },
     });
 
     if (!existing) {
-      return NextResponse.json(
-        { error: 'Contact non trouvé' },
-        { status: 404 }
-      );
+      throw ApiErrors.NotFound('Contact');
     }
 
-    // Update contact
     const contact = await prisma.contact.update({
-      where: { id: id },
+      where: { id },
       data,
     });
 
     return NextResponse.json(contact);
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'Données invalides', details: error.errors },
-        { status: 400 }
-      );
-    }
-
-    console.error('Update contact error:', error);
-    return NextResponse.json(
-      { error: 'Erreur lors de la mise à jour du contact' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: `/api/contacts/${id}`,
+      method: 'PATCH',
+    });
   }
 }
 
@@ -143,46 +142,47 @@ export async function PATCH(
  * Soft delete a contact
  */
 export async function DELETE(
-  req: Request,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
 
-  // ✅ SECURITY: Check permission FIRST
-  const permError = await requirePermission('delete_contacts');
-  if (permError) return permError;
-
   try {
-    const tenantId = await requireTenantId();
+    const session = await auth();
+    if (!session?.user) {
+      throw ApiErrors.Unauthorized();
+    }
 
-    // Check contact exists
+    const user = session.user as any;
+    const role = user.role as Role;
+    const tenantId = user.tenantId as string;
+
+    if (!hasPermission(role, 'delete_contacts')) {
+      throw ApiErrors.Forbidden('Permission requise: delete_contacts');
+    }
+
     const existing = await prisma.contact.findFirst({
       where: {
-        id: id,
+        id,
         tenant_id: tenantId,
         deleted_at: null,
       },
     });
 
     if (!existing) {
-      return NextResponse.json(
-        { error: 'Contact non trouvé' },
-        { status: 404 }
-      );
+      throw ApiErrors.NotFound('Contact');
     }
 
-    // Soft delete
     await prisma.contact.update({
-      where: { id: id },
+      where: { id },
       data: { deleted_at: new Date() },
     });
 
     return NextResponse.json({ message: 'Contact supprimé' });
   } catch (error) {
-    console.error('Delete contact error:', error);
-    return NextResponse.json(
-      { error: 'Erreur lors de la suppression du contact' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: `/api/contacts/${id}`,
+      method: 'DELETE',
+    });
   }
 }

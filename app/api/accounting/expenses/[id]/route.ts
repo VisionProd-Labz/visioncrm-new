@@ -1,29 +1,33 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getCurrentTenantId, requireTenantId } from '@/lib/tenant';
+import { ApiErrors, handleApiError } from '@/lib/api/error-handler';
 import { auth } from '@/auth';
-import { expenseSchema } from '@/lib/accounting/validations';
-import { z } from 'zod';
-import { requirePermission } from '@/lib/middleware/require-permission';
+import { hasPermission, type Role } from '@/lib/permissions';
 
 /**
- * GET /api/accounting/expenses/[id]
+ * GET /api/accounting/expenses/:id
  * Get a specific expense
+ *
+ * ✅ REFACTORED: Using centralized error handler
  */
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
+
   try {
-    const { id } = await params;
+    const session = await auth();
+    if (!session?.user) {
+      throw ApiErrors.Unauthorized();
+    }
 
-    // ✅ SECURITY FIX #3: RBAC permission check
-    const permError = await requirePermission('view_expenses');
-    if (permError) return permError;
+    const user = session.user as any;
+    const role = user.role as Role;
+    const tenantId = user.tenantId as string;
 
-    const tenantId = await requireTenantId();
-    if (!tenantId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    if (!hasPermission(role, 'view_expenses')) {
+      throw ApiErrors.Forbidden('Permission requise: view_expenses');
     }
 
     const expense = await prisma.expense.findFirst({
@@ -47,44 +51,47 @@ export async function GET(
     });
 
     if (!expense) {
-      return NextResponse.json({ error: 'Dépense introuvable' }, { status: 404 });
+      throw ApiErrors.NotFound('Dépense');
     }
 
     return NextResponse.json({ expense });
   } catch (error) {
-    console.error('Error fetching expense:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch expense' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: `/api/accounting/expenses/${id}`,
+      method: 'GET',
+    });
   }
 }
 
 /**
- * PATCH /api/accounting/expenses/[id]
+ * PATCH /api/accounting/expenses/:id
  * Update an expense
+ *
+ * ✅ REFACTORED: Using centralized error handler
  */
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
+
   try {
-    const { id } = await params;
+    const session = await auth();
+    if (!session?.user) {
+      throw ApiErrors.Unauthorized();
+    }
 
-    // ✅ SECURITY FIX #3: RBAC permission check
-    const permError = await requirePermission('edit_expenses');
-    if (permError) return permError;
+    const user = session.user as any;
+    const role = user.role as Role;
+    const tenantId = user.tenantId as string;
 
-    const tenantId = await requireTenantId();
-    if (!tenantId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    if (!hasPermission(role, 'edit_expenses')) {
+      throw ApiErrors.Forbidden('Permission requise: edit_expenses');
     }
 
     const body = await req.json();
-    // For PATCH, we validate that the provided fields are valid, but don't require all fields
     const data = body;
 
-    // Check if expense exists and belongs to tenant
     const existing = await prisma.expense.findFirst({
       where: {
         id,
@@ -94,15 +101,12 @@ export async function PATCH(
     });
 
     if (!existing) {
-      return NextResponse.json({ error: 'Dépense introuvable' }, { status: 404 });
+      throw ApiErrors.NotFound('Dépense');
     }
 
     // Prevent editing if already approved or paid
     if (existing.status === 'APPROVED' || existing.status === 'PAID') {
-      return NextResponse.json(
-        { error: 'Impossible de modifier une dépense approuvée ou payée' },
-        { status: 400 }
-      );
+      throw ApiErrors.BadRequest('Impossible de modifier une dépense approuvée ou payée');
     }
 
     // Verify vendor if provided
@@ -116,10 +120,7 @@ export async function PATCH(
       });
 
       if (!vendor) {
-        return NextResponse.json(
-          { error: 'Fournisseur introuvable' },
-          { status: 404 }
-        );
+        throw ApiErrors.NotFound('Fournisseur');
       }
     }
 
@@ -143,41 +144,39 @@ export async function PATCH(
 
     return NextResponse.json(expense);
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'Données invalides', details: error.errors },
-        { status: 400 }
-      );
-    }
-    console.error('Error updating expense:', error);
-    return NextResponse.json(
-      { error: 'Failed to update expense' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: `/api/accounting/expenses/${id}`,
+      method: 'PATCH',
+    });
   }
 }
 
 /**
- * DELETE /api/accounting/expenses/[id]
+ * DELETE /api/accounting/expenses/:id
  * Soft delete an expense
+ *
+ * ✅ REFACTORED: Using centralized error handler
  */
 export async function DELETE(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
+
   try {
-    const { id } = await params;
-
-    // ✅ SECURITY FIX #3: RBAC permission check
-    const permError = await requirePermission('delete_expenses');
-    if (permError) return permError;
-
-    const tenantId = await requireTenantId();
-    if (!tenantId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const session = await auth();
+    if (!session?.user) {
+      throw ApiErrors.Unauthorized();
     }
 
-    // Check if expense exists and belongs to tenant
+    const user = session.user as any;
+    const role = user.role as Role;
+    const tenantId = user.tenantId as string;
+
+    if (!hasPermission(role, 'delete_expenses')) {
+      throw ApiErrors.Forbidden('Permission requise: delete_expenses');
+    }
+
     const existing = await prisma.expense.findFirst({
       where: {
         id,
@@ -187,18 +186,14 @@ export async function DELETE(
     });
 
     if (!existing) {
-      return NextResponse.json({ error: 'Dépense introuvable' }, { status: 404 });
+      throw ApiErrors.NotFound('Dépense');
     }
 
     // Prevent deletion if already paid
     if (existing.status === 'PAID') {
-      return NextResponse.json(
-        { error: 'Impossible de supprimer une dépense déjà payée' },
-        { status: 400 }
-      );
+      throw ApiErrors.BadRequest('Impossible de supprimer une dépense déjà payée');
     }
 
-    // Soft delete
     await prisma.expense.update({
       where: { id },
       data: { deleted_at: new Date() },
@@ -206,10 +201,9 @@ export async function DELETE(
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error('Error deleting expense:', error);
-    return NextResponse.json(
-      { error: 'Failed to delete expense' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: `/api/accounting/expenses/${id}`,
+      method: 'DELETE',
+    });
   }
 }

@@ -1,26 +1,39 @@
-import { NextResponse } from 'next/server';
-import { requirePermission } from '@/lib/middleware/require-permission';
+import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getCurrentTenantId, requireTenantId } from '@/lib/tenant';
 import { vehicleSchema } from '@/lib/validations';
-import { z } from 'zod';
+import { ApiErrors, handleApiError } from '@/lib/api/error-handler';
+import { auth } from '@/auth';
+import { hasPermission, type Role } from '@/lib/permissions';
 
 /**
  * GET /api/vehicles/:id
  * Get a single vehicle
+ *
+ * ✅ REFACTORED: Using centralized error handler
  */
 export async function GET(
-  req: Request,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
 
   try {
-    const tenantId = await requireTenantId();
+    const session = await auth();
+    if (!session?.user) {
+      throw ApiErrors.Unauthorized();
+    }
+
+    const user = session.user as any;
+    const role = user.role as Role;
+    const tenantId = user.tenantId as string;
+
+    if (!hasPermission(role, 'view_vehicles')) {
+      throw ApiErrors.Forbidden('Permission requise: view_vehicles');
+    }
 
     const vehicle = await prisma.vehicle.findFirst({
       where: {
-        id: id,
+        id,
         tenant_id: tenantId,
         deleted_at: null,
       },
@@ -42,58 +55,61 @@ export async function GET(
     });
 
     if (!vehicle) {
-      return NextResponse.json(
-        { error: 'Véhicule non trouvé' },
-        { status: 404 }
-      );
+      throw ApiErrors.NotFound('Véhicule');
     }
 
     return NextResponse.json(vehicle);
   } catch (error) {
-    console.error('Get vehicle error:', error);
-    return NextResponse.json(
-      { error: 'Erreur lors de la récupération du véhicule' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: `/api/vehicles/${id}`,
+      method: 'GET',
+    });
   }
 }
 
 /**
  * PATCH /api/vehicles/:id
  * Update a vehicle
+ *
+ * ✅ REFACTORED: Using centralized error handler
  */
 export async function PATCH(
-  req: Request,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
 
   try {
-    const tenantId = await requireTenantId();
-    const body = await req.json();
+    const session = await auth();
+    if (!session?.user) {
+      throw ApiErrors.Unauthorized();
+    }
 
-    // Validate input
+    const user = session.user as any;
+    const role = user.role as Role;
+    const tenantId = user.tenantId as string;
+
+    if (!hasPermission(role, 'edit_vehicles')) {
+      throw ApiErrors.Forbidden('Permission requise: edit_vehicles');
+    }
+
+    const body = await req.json();
     const data = vehicleSchema.partial().parse(body);
 
-    // Check vehicle exists
     const existing = await prisma.vehicle.findFirst({
       where: {
-        id: id,
+        id,
         tenant_id: tenantId,
         deleted_at: null,
       },
     });
 
     if (!existing) {
-      return NextResponse.json(
-        { error: 'Véhicule non trouvé' },
-        { status: 404 }
-      );
+      throw ApiErrors.NotFound('Véhicule');
     }
 
-    // Update vehicle
     const vehicle = await prisma.vehicle.update({
-      where: { id: id },
+      where: { id },
       data,
       include: {
         owner: true,
@@ -102,62 +118,61 @@ export async function PATCH(
 
     return NextResponse.json(vehicle);
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'Données invalides', details: error.errors },
-        { status: 400 }
-      );
-    }
-
-    console.error('Update vehicle error:', error);
-    return NextResponse.json(
-      { error: 'Erreur lors de la mise à jour du véhicule' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: `/api/vehicles/${id}`,
+      method: 'PATCH',
+    });
   }
 }
 
 /**
  * DELETE /api/vehicles/:id
  * Soft delete a vehicle
+ *
+ * ✅ REFACTORED: Using centralized error handler
  */
 export async function DELETE(
-  req: Request,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
 
   try {
-    const tenantId = await requireTenantId();
+    const session = await auth();
+    if (!session?.user) {
+      throw ApiErrors.Unauthorized();
+    }
 
-    // Check vehicle exists
+    const user = session.user as any;
+    const role = user.role as Role;
+    const tenantId = user.tenantId as string;
+
+    if (!hasPermission(role, 'delete_vehicles')) {
+      throw ApiErrors.Forbidden('Permission requise: delete_vehicles');
+    }
+
     const existing = await prisma.vehicle.findFirst({
       where: {
-        id: id,
+        id,
         tenant_id: tenantId,
         deleted_at: null,
       },
     });
 
     if (!existing) {
-      return NextResponse.json(
-        { error: 'Véhicule non trouvé' },
-        { status: 404 }
-      );
+      throw ApiErrors.NotFound('Véhicule');
     }
 
-    // Soft delete
     await prisma.vehicle.update({
-      where: { id: id },
+      where: { id },
       data: { deleted_at: new Date() },
     });
 
     return NextResponse.json({ message: 'Véhicule supprimé' });
   } catch (error) {
-    console.error('Delete vehicle error:', error);
-    return NextResponse.json(
-      { error: 'Erreur lors de la suppression du véhicule' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: `/api/vehicles/${id}`,
+      method: 'DELETE',
+    });
   }
 }

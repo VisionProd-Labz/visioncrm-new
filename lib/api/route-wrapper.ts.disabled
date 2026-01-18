@@ -1,0 +1,258 @@
+/**
+ * API Route Wrapper
+ *
+ * Eliminates 105+ repetitive permission checks across API routes
+ * Provides automatic error handling, auth, and tenant validation
+ */
+
+import { NextRequest, NextResponse } from 'next/server';
+import { auth } from '@/auth';
+import { hasPermission, type Permission, type Role } from '@/lib/permissions';
+import { handleApiError, ApiErrors } from './error-handler';
+
+/**
+ * Route handler context - auto-injected into your route
+ */
+export interface RouteContext {
+  /** Current user session */
+  session: NonNullable<Awaited<ReturnType<typeof auth>>>;
+  /** Current user data */
+  user: {
+    id: string;
+    email: string;
+    role: Role;
+    tenantId: string;
+    [key: string]: unknown;
+  };
+  /** Tenant ID (extracted from user) */
+  tenantId: string;
+  /** User role */
+  role: Role;
+  /** Route params (for dynamic routes like /api/projects/[id]) */
+  params: Record<string, string>;
+}
+
+/**
+ * Route handler function type
+ */
+type RouteHandler = (
+  req: NextRequest,
+  context: RouteContext
+) => Promise<NextResponse> | NextResponse;
+
+/**
+ * Options for createApiRoute
+ */
+interface ApiRouteOptions {
+  /** Required permission (optional - for public routes) */
+  permission?: Permission;
+  /** Alternative: require any of these permissions */
+  anyPermission?: Permission[];
+  /** Alternative: require all of these permissions */
+  allPermissions?: Permission[];
+  /** Alternative: require specific roles */
+  roles?: Role[];
+  /** Skip authentication entirely (for public routes) */
+  public?: boolean;
+}
+
+/**
+ * Create an API route with automatic error handling, auth, and RBAC
+ *
+ * @example
+ * ```typescript
+ * // Before (18 lines):
+ * export async function GET(req: NextRequest, { params }) {
+ *   try {
+ *     const permError = await requirePermission('view_contacts');
+ *     if (permError) return permError;
+ *
+ *     const tenantId = await requireTenantId();
+ *     const { id } = params;
+ *
+ *     const contact = await prisma.contact.findFirst({
+ *       where: { id, tenant_id: tenantId }
+ *     });
+ *
+ *     return NextResponse.json(contact);
+ *   } catch (error) {
+ *     console.error('Error:', error);
+ *     return NextResponse.json({ error: 'Error' }, { status: 500 });
+ *   }
+ * }
+ *
+ * // After (6 lines):
+ * export const GET = createApiRoute('view_contacts', async (req, ctx) => {
+ *   const contact = await prisma.contact.findFirst({
+ *     where: { id: ctx.params.id, tenant_id: ctx.tenantId }
+ *   });
+ *   return NextResponse.json(contact);
+ * });
+ * ```
+ */
+export function createApiRoute(
+  permissionOrOptions: Permission | ApiRouteOptions | undefined,
+  handler: RouteHandler
+) {
+  return async (
+    req: NextRequest,
+    routeContext: { params?: Promise<Record<string, string>> | Record<string, string> } = {}
+  ) => {
+    try {
+      // Await params if it's a Promise (Next.js 15 compatibility)
+      const resolvedParams = routeContext.params
+        ? (routeContext.params instanceof Promise ? await routeContext.params : routeContext.params)
+        : {};
+
+      // Parse options
+      const options: ApiRouteOptions =
+        typeof permissionOrOptions === 'string'
+          ? { permission: permissionOrOptions }
+          : permissionOrOptions || {};
+
+      // Public routes - skip auth
+      if (options.public) {
+        const publicContext: RouteContext = {
+          session: null as any,
+          user: null as any,
+          tenantId: '',
+          role: 'USER',
+          params: resolvedParams,
+        };
+        return await handler(req, publicContext);
+      }
+
+      // Get session
+      const authSession = await auth();
+      if (!authSession?.user) {
+        throw ApiErrors.Unauthorized();
+      }
+
+      // Extract user data
+      const user = authSession.user as any;
+      const role = user.role as Role;
+      const tenantId = user.tenantId as string;
+
+      if (!role) {
+        throw ApiErrors.Forbidden('Rôle utilisateur invalide');
+      }
+
+      if (!tenantId) {
+        throw ApiErrors.Forbidden('Tenant ID manquant');
+      }
+
+      // Check permissions
+      if (options.permission) {
+        if (!hasPermission(role, options.permission)) {
+          // Log unauthorized attempt
+          if (process.env.NODE_ENV === 'production') {
+            console.warn('[SECURITY] Unauthorized access attempt:', {
+              userId: user.id,
+              role,
+              requiredPermission: options.permission,
+              timestamp: new Date().toISOString(),
+            });
+          }
+          throw ApiErrors.Forbidden(
+            `Permission requise: ${options.permission}`
+          );
+        }
+      }
+
+      // Check any permission
+      if (options.anyPermission && options.anyPermission.length > 0) {
+        const hasAny = options.anyPermission.some((perm) =>
+          hasPermission(role, perm)
+        );
+        if (!hasAny) {
+          throw ApiErrors.Forbidden(
+            `Au moins une permission requise: ${options.anyPermission.join(', ')}`
+          );
+        }
+      }
+
+      // Check all permissions
+      if (options.allPermissions && options.allPermissions.length > 0) {
+        const hasAll = options.allPermissions.every((perm) =>
+          hasPermission(role, perm)
+        );
+        if (!hasAll) {
+          throw ApiErrors.Forbidden(
+            `Toutes les permissions requises: ${options.allPermissions.join(', ')}`
+          );
+        }
+      }
+
+      // Check roles
+      if (options.roles && options.roles.length > 0) {
+        if (!options.roles.includes(role)) {
+          throw ApiErrors.Forbidden(
+            `Rôle requis: ${options.roles.join(' ou ')}`
+          );
+        }
+      }
+
+      // Build handler context
+      const handlerContext: RouteContext = {
+        session: authSession,
+        user: {
+          id: user.id,
+          email: user.email,
+          role,
+          tenantId,
+          ...user,
+        },
+        tenantId,
+        role,
+        params: resolvedParams,
+      };
+
+      // Call handler
+      return await handler(req, handlerContext);
+    } catch (error) {
+      // Automatic error handling
+      return handleApiError(error, {
+        route: req.url,
+        method: req.method,
+      });
+    }
+  };
+}
+
+/**
+ * Shorthand for creating a simple GET route
+ */
+export const createGetRoute = (
+  permission: Permission,
+  handler: RouteHandler
+) => createApiRoute(permission, handler);
+
+/**
+ * Shorthand for creating a simple POST route
+ */
+export const createPostRoute = (
+  permission: Permission,
+  handler: RouteHandler
+) => createApiRoute(permission, handler);
+
+/**
+ * Shorthand for creating a simple PUT route
+ */
+export const createPutRoute = (
+  permission: Permission,
+  handler: RouteHandler
+) => createApiRoute(permission, handler);
+
+/**
+ * Shorthand for creating a simple DELETE route
+ */
+export const createDeleteRoute = (
+  permission: Permission,
+  handler: RouteHandler
+) => createApiRoute(permission, handler);
+
+/**
+ * Create a public API route (no auth required)
+ */
+export const createPublicRoute = (handler: RouteHandler) =>
+  createApiRoute({ public: true }, handler);

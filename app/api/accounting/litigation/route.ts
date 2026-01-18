@@ -1,26 +1,32 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@/auth';
 import { prisma } from '@/lib/prisma';
-import { requireTenantId } from '@/lib/tenant';
+import { ApiErrors, handleApiError } from '@/lib/api/error-handler';
+import { auth } from '@/auth';
+import { hasPermission, type Role } from '@/lib/permissions';
 import { litigationSchema } from '@/lib/accounting/validations';
-import { z } from 'zod';
-import { requirePermission } from '@/lib/middleware/require-permission';
-
-// Utility function to get current tenant ID
 
 /**
  * GET /api/accounting/litigation
  * List all litigation cases for the current tenant
+ *
+ * ✅ REFACTORED: Using centralized error handler
  */
 export async function GET(req: NextRequest) {
   try {
-    // ✅ SECURITY FIX #3: Permission check
-    const permError = await requirePermission('view_litigation');
-    if (permError) return permError;
+    const session = await auth();
+    if (!session?.user) {
+      throw ApiErrors.Unauthorized();
+    }
 
-    const tenantId = await requireTenantId();
+    const user = session.user as any;
+    const role = user.role as Role;
+    const tenantId = user.tenantId as string;
+
+    if (!hasPermission(role, 'view_litigation')) {
+      throw ApiErrors.Forbidden('Permission requise: view_litigation');
+    }
+
     const { searchParams } = new URL(req.url);
-
     const status = searchParams.get('status');
     const type = searchParams.get('type');
 
@@ -37,7 +43,6 @@ export async function GET(req: NextRequest) {
       orderBy: { created_at: 'desc' },
     });
 
-    // Calculate stats
     const stats = {
       totalCases: cases.length,
       activeCases: cases.filter(c => c.status === 'ONGOING').length,
@@ -47,27 +52,37 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ cases, stats });
   } catch (error) {
-    console.error('Error fetching litigation cases:', error);
-    return NextResponse.json(
-      { error: 'Une erreur est survenue lors de la récupération des litiges' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: '/api/accounting/litigation',
+      method: 'GET',
+    });
   }
 }
 
 /**
  * POST /api/accounting/litigation
  * Create a new litigation case
+ *
+ * ✅ REFACTORED: Using centralized error handler
  */
 export async function POST(req: NextRequest) {
   try {
-    const tenantId = await requireTenantId();
-    const body = await req.json();
+    const session = await auth();
+    if (!session?.user) {
+      throw ApiErrors.Unauthorized();
+    }
 
-    // Validate request body
+    const user = session.user as any;
+    const role = user.role as Role;
+    const tenantId = user.tenantId as string;
+
+    if (!hasPermission(role, 'create_litigation')) {
+      throw ApiErrors.Forbidden('Permission requise: create_litigation');
+    }
+
+    const body = await req.json();
     const data = litigationSchema.parse(body);
 
-    // Create litigation case
     const { metadata, ...rest } = data;
     const litigationCase = await prisma.litigation.create({
       data: {
@@ -79,17 +94,9 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(litigationCase, { status: 201 });
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'Données invalides', details: error.errors },
-        { status: 400 }
-      );
-    }
-
-    console.error('Error creating litigation case:', error);
-    return NextResponse.json(
-      { error: 'Une erreur est survenue lors de la création du litige' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: '/api/accounting/litigation',
+      method: 'POST',
+    });
   }
 }

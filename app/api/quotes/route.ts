@@ -1,68 +1,35 @@
 import { NextResponse } from 'next/server';
-import { requirePermission } from '@/lib/middleware/require-permission';
 import { prisma } from '@/lib/prisma';
-import { getCurrentTenantId, requireTenantId } from '@/lib/tenant';
 import { quoteSchema } from '@/lib/validations';
 import { sendQuoteEmail } from '@/lib/email';
-import { z } from 'zod';
-
-/**
- * Generate unique quote number
- */
-async function generateQuoteNumber(tenantId: string): Promise<string> {
-  const year = new Date().getFullYear();
-  const prefix = `DEV-${year}`;
-
-  const lastQuote = await prisma.quote.findFirst({
-    where: {
-      tenant_id: tenantId,
-      quote_number: { startsWith: prefix },
-    },
-    orderBy: { created_at: 'desc' },
-  });
-
-  let sequence = 1;
-  if (lastQuote) {
-    const lastNumber = lastQuote.quote_number.split('-').pop();
-    sequence = parseInt(lastNumber || '0') + 1;
-  }
-
-  return `${prefix}-${sequence.toString().padStart(4, '0')}`;
-}
-
-/**
- * Calculate totals from items
- */
-function calculateTotals(items: any[]) {
-  const subtotal = items.reduce((sum, item) => {
-    return sum + (item.quantity * item.unit_price);
-  }, 0);
-
-  const vatRate = items[0]?.vat_rate || 20;
-  const vatAmount = (subtotal * vatRate) / 100;
-  const total = subtotal + vatAmount;
-
-  return {
-    subtotal: Number(subtotal.toFixed(2)),
-    vat_rate: vatRate,
-    vat_amount: Number(vatAmount.toFixed(2)),
-    total: Number(total.toFixed(2)),
-  };
-}
+import { ApiErrors, handleApiError } from '@/lib/api/error-handler';
+import { auth } from '@/auth';
+import { hasPermission, type Role } from '@/lib/permissions';
+import { calculateTotals } from '@/lib/utils/invoice-calculations';
+import { generateDocumentNumber } from '@/lib/utils/document-numbers';
 
 /**
  * GET /api/quotes
  * List quotes with filters
+ *
+ * ✅ REFACTORED: Using centralized utilities and error handler
  */
 export async function GET(req: Request) {
   try {
-    // ✅ SECURITY FIX #3: Permission check
-    const permError = await requirePermission('view_quotes');
-    if (permError) return permError;
+    const session = await auth();
+    if (!session?.user) {
+      throw ApiErrors.Unauthorized();
+    }
 
-    const tenantId = await requireTenantId();
+    const user = session.user as any;
+    const role = user.role as Role;
+    const tenantId = user.tenantId as string;
+
+    if (!hasPermission(role, 'view_quotes')) {
+      throw ApiErrors.Forbidden('Permission requise: view_quotes');
+    }
+
     const { searchParams } = new URL(req.url);
-
     const contactId = searchParams.get('contact_id');
     const status = searchParams.get('status');
 
@@ -97,31 +64,42 @@ export async function GET(req: Request) {
 
     return NextResponse.json({ quotes });
   } catch (error) {
-    console.error('Get quotes error:', error);
-    return NextResponse.json(
-      { error: 'Erreur lors de la récupération des devis' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: '/api/quotes',
+      method: 'GET',
+    });
   }
 }
 
 /**
  * POST /api/quotes
  * Create a new quote
+ *
+ * ✅ REFACTORED: Using centralized utilities
  */
 export async function POST(req: Request) {
   try {
-    const tenantId = await requireTenantId();
-    const body = await req.json();
+    const session = await auth();
+    if (!session?.user) {
+      throw ApiErrors.Unauthorized();
+    }
 
-    // Validate input
+    const user = session.user as any;
+    const role = user.role as Role;
+    const tenantId = user.tenantId as string;
+
+    if (!hasPermission(role, 'create_quotes')) {
+      throw ApiErrors.Forbidden('Permission requise: create_quotes');
+    }
+
+    const body = await req.json();
     const data = quoteSchema.parse(body);
 
-    // Calculate totals
+    // Calculate totals using centralized utility
     const totals = calculateTotals(data.items);
 
-    // Generate quote number
-    const quoteNumber = await generateQuoteNumber(tenantId);
+    // Generate quote number using centralized utility
+    const quoteNumber = await generateDocumentNumber(tenantId, 'quote');
 
     // Create quote
     const quote = await prisma.quote.create({
@@ -152,9 +130,7 @@ export async function POST(req: Request) {
         });
         console.log(`Quote email sent to ${quote.contact.email}`);
       } catch (emailError) {
-        // Log error but don't fail the quote creation
         console.error('Failed to send quote email:', emailError);
-        // You could store this in a queue for retry later
       }
     } else {
       console.warn(`No email address for contact ${quote.contact_id}, skipping quote email`);
@@ -162,17 +138,9 @@ export async function POST(req: Request) {
 
     return NextResponse.json(quote, { status: 201 });
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'Données invalides', details: error.errors },
-        { status: 400 }
-      );
-    }
-
-    console.error('Create quote error:', error);
-    return NextResponse.json(
-      { error: 'Erreur lors de la création du devis' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: '/api/quotes',
+      method: 'POST',
+    });
   }
 }

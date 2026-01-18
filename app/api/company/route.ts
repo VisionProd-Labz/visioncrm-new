@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
-import { requirePermission } from '@/lib/middleware/require-permission';
 import { prisma } from '@/lib/prisma';
-import { getCurrentTenantId, requireTenantId } from '@/lib/tenant';
+import { ApiErrors, handleApiError } from '@/lib/api/error-handler';
+import { auth } from '@/auth';
+import { hasPermission, type Role } from '@/lib/permissions';
 import { z } from 'zod';
 
 const companySchema = z.object({
@@ -16,14 +17,23 @@ const companySchema = z.object({
 /**
  * GET /api/company
  * Get company information
+ *
+ * ✅ REFACTORED: Using centralized error handler
  */
 export async function GET(req: Request) {
   try {
-    // ✅ SECURITY FIX #3: Permission check
-    const permError = await requirePermission('view_company');
-    if (permError) return permError;
+    const session = await auth();
+    if (!session?.user) {
+      throw ApiErrors.Unauthorized();
+    }
 
-    const tenantId = await requireTenantId();
+    const user = session.user as any;
+    const role = user.role as Role;
+    const tenantId = user.tenantId as string;
+
+    if (!hasPermission(role, 'view_company')) {
+      throw ApiErrors.Forbidden('Permission requise: view_company');
+    }
 
     const tenant = await prisma.tenant.findUnique({
       where: { id: tenantId },
@@ -40,35 +50,42 @@ export async function GET(req: Request) {
     });
 
     if (!tenant) {
-      return NextResponse.json(
-        { error: 'Société non trouvée' },
-        { status: 404 }
-      );
+      throw ApiErrors.NotFound('Société');
     }
 
     return NextResponse.json(tenant);
   } catch (error) {
-    console.error('Get company error:', error);
-    return NextResponse.json(
-      { error: 'Erreur lors de la récupération des informations' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: '/api/company',
+      method: 'GET',
+    });
   }
 }
 
 /**
  * PATCH /api/company
  * Update company information
+ *
+ * ✅ REFACTORED: Using centralized error handler
  */
 export async function PATCH(req: Request) {
   try {
-    const tenantId = await requireTenantId();
-    const body = await req.json();
+    const session = await auth();
+    if (!session?.user) {
+      throw ApiErrors.Unauthorized();
+    }
 
-    // Validate input
+    const user = session.user as any;
+    const role = user.role as Role;
+    const tenantId = user.tenantId as string;
+
+    if (!hasPermission(role, 'edit_company')) {
+      throw ApiErrors.Forbidden('Permission requise: edit_company');
+    }
+
+    const body = await req.json();
     const data = companySchema.parse(body);
 
-    // Update tenant
     const tenant = await prisma.tenant.update({
       where: { id: tenantId },
       data,
@@ -86,17 +103,9 @@ export async function PATCH(req: Request) {
 
     return NextResponse.json(tenant);
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'Données invalides', details: error.errors },
-        { status: 400 }
-      );
-    }
-
-    console.error('Update company error:', error);
-    return NextResponse.json(
-      { error: 'Erreur lors de la mise à jour des informations' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: '/api/company',
+      method: 'PATCH',
+    });
   }
 }

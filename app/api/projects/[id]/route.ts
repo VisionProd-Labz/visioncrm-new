@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@/auth';
 import { prisma } from '@/lib/prisma';
+import { ApiErrors, handleApiError } from '@/lib/api/error-handler';
+import { auth } from '@/auth';
+import { hasPermission, type Role } from '@/lib/permissions';
 import { z } from 'zod';
-import { requirePermission } from '@/lib/middleware/require-permission';
-import { requireTenantId } from '@/lib/tenant';
 
 const updateProjectSchema = z.object({
   name: z.string().optional(),
@@ -15,20 +15,30 @@ const updateProjectSchema = z.object({
   endDate: z.string().optional(),
 });
 
+/**
+ * GET /api/projects/[id]
+ * Get a single project
+ *
+ * ✅ REFACTORED: Using centralized error handler
+ */
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
+
   try {
-    const { id } = await params;
+    const session = await auth();
+    if (!session?.user) {
+      throw ApiErrors.Unauthorized();
+    }
 
-    // ✅ SECURITY FIX #3: RBAC permission check
-    const permError = await requirePermission('view_projects');
-    if (permError) return permError;
+    const user = session.user as any;
+    const role = user.role as Role;
+    const tenantId = user.tenantId as string;
 
-    const tenantId = await requireTenantId();
-    if (!tenantId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    if (!hasPermission(role, 'view_projects')) {
+      throw ApiErrors.Forbidden('Permission requise: view_projects');
     }
 
     const project = await prisma.project.findFirst({
@@ -75,39 +85,47 @@ export async function GET(
     });
 
     if (!project) {
-      return NextResponse.json({ error: 'Project not found' }, { status: 404 });
+      throw ApiErrors.NotFound('Project');
     }
 
     return NextResponse.json(project);
   } catch (error) {
-    console.error('Error fetching project:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: `/api/projects/${id}`,
+      method: 'GET',
+    });
   }
 }
 
+/**
+ * PATCH /api/projects/[id]
+ * Update a project
+ *
+ * ✅ REFACTORED: Using centralized error handler
+ */
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
+
   try {
-    const { id } = await params;
+    const session = await auth();
+    if (!session?.user) {
+      throw ApiErrors.Unauthorized();
+    }
 
-    // ✅ SECURITY FIX #3: RBAC permission check
-    const permError = await requirePermission('edit_projects');
-    if (permError) return permError;
+    const user = session.user as any;
+    const role = user.role as Role;
+    const tenantId = user.tenantId as string;
 
-    const tenantId = await requireTenantId();
-    if (!tenantId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    if (!hasPermission(role, 'edit_projects')) {
+      throw ApiErrors.Forbidden('Permission requise: edit_projects');
     }
 
     const body = await req.json();
     const data = updateProjectSchema.parse(body);
 
-    // Check if project exists and belongs to tenant
     const existingProject = await prisma.project.findFirst({
       where: {
         id: id,
@@ -117,7 +135,7 @@ export async function PATCH(
     });
 
     if (!existingProject) {
-      return NextResponse.json({ error: 'Project not found' }, { status: 404 });
+      throw ApiErrors.NotFound('Project');
     }
 
     const project = await prisma.project.update({
@@ -126,10 +144,10 @@ export async function PATCH(
         ...(data.name && { name: data.name }),
         ...(data.description !== undefined && { description: data.description }),
         ...(data.status && { status: data.status }),
-        ...(data.contactId !== undefined && { contactId: data.contactId || null }),
-        ...(data.quoteId !== undefined && { quoteId: data.quoteId || null }),
-        ...(data.startDate && { startDate: new Date(data.startDate) }),
-        ...(data.endDate && { endDate: new Date(data.endDate) }),
+        ...(data.contactId !== undefined && { contact_id: data.contactId || null }),
+        ...(data.quoteId !== undefined && { quote_id: data.quoteId || null }),
+        ...(data.startDate && { start_date: new Date(data.startDate) }),
+        ...(data.endDate && { end_date: new Date(data.endDate) }),
       },
       include: {
         contact: {
@@ -156,39 +174,39 @@ export async function PATCH(
 
     return NextResponse.json(project);
   } catch (error) {
-    console.error('Error updating project:', error);
-
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'Invalid data', details: error.errors },
-        { status: 400 }
-      );
-    }
-
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: `/api/projects/${id}`,
+      method: 'PATCH',
+    });
   }
 }
 
+/**
+ * DELETE /api/projects/[id]
+ * Soft delete a project
+ *
+ * ✅ REFACTORED: Using centralized error handler
+ */
 export async function DELETE(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
+
   try {
-    const { id } = await params;
-
-    // ✅ SECURITY FIX #3: RBAC permission check
-    const permError = await requirePermission('delete_projects');
-    if (permError) return permError;
-
-    const tenantId = await requireTenantId();
-    if (!tenantId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const session = await auth();
+    if (!session?.user) {
+      throw ApiErrors.Unauthorized();
     }
 
-    // Check if project exists and belongs to tenant
+    const user = session.user as any;
+    const role = user.role as Role;
+    const tenantId = user.tenantId as string;
+
+    if (!hasPermission(role, 'delete_projects')) {
+      throw ApiErrors.Forbidden('Permission requise: delete_projects');
+    }
+
     const existingProject = await prisma.project.findFirst({
       where: {
         id: id,
@@ -198,10 +216,9 @@ export async function DELETE(
     });
 
     if (!existingProject) {
-      return NextResponse.json({ error: 'Project not found' }, { status: 404 });
+      throw ApiErrors.NotFound('Project');
     }
 
-    // Soft delete
     await prisma.project.update({
       where: { id: id },
       data: { deleted_at: new Date() },
@@ -209,10 +226,9 @@ export async function DELETE(
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error('Error deleting project:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: `/api/projects/${id}`,
+      method: 'DELETE',
+    });
   }
 }

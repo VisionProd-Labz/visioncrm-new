@@ -1,8 +1,7 @@
-import { NextResponse } from 'next/server';
-import { requirePermission } from '@/lib/middleware/require-permission';
-import { auth } from '@/auth';
+import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getCurrentTenantId, requireTenantId } from '@/lib/tenant';
+import { ApiErrors, handleApiError } from '@/lib/api/error-handler';
+import { auth } from '@/auth';
 import { z } from 'zod';
 
 const updateMemberSchema = z.object({
@@ -10,80 +9,64 @@ const updateMemberSchema = z.object({
   name: z.string().min(1).max(255).optional(),
 });
 
-// PATCH /api/team/[id] - Update team member
+/**
+ * PATCH /api/team/:id
+ * Update team member
+ *
+ * ✅ REFACTORED: Using centralized error handler
+ */
 export async function PATCH(
-  req: Request,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
+
   try {
     const session = await auth();
-
     if (!session?.user) {
-      return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
+      throw ApiErrors.Unauthorized();
     }
 
-    const tenantId = await requireTenantId();
+    const user = session.user as any;
+    const tenantId = user.tenantId as string;
 
-    if (!tenantId) {
-      return NextResponse.json({ error: 'Tenant non trouvé' }, { status: 404 });
-    }
-
-    const { id } = await params;
-
-    // Check if current user has permission (OWNER or MANAGER)
     const currentUser = await prisma.user.findFirst({
       where: {
         email: session.user.email!,
-        tenantId: tenantId,
+        tenantId,
       },
     });
 
     if (!currentUser || !['OWNER', 'MANAGER', 'SUPER_ADMIN'].includes(currentUser.role)) {
-      return NextResponse.json(
-        { error: 'Vous n\'avez pas la permission de modifier les membres' },
-        { status: 403 }
-      );
+      throw ApiErrors.Forbidden('Vous n\'avez pas la permission de modifier les membres');
     }
 
     const body = await req.json();
     const data = updateMemberSchema.parse(body);
 
-    // Get member to update
     const member = await prisma.user.findFirst({
       where: {
-        id: id,
-        tenantId: tenantId,
+        id,
+        tenantId,
       },
     });
 
     if (!member) {
-      return NextResponse.json(
-        { error: 'Membre non trouvé' },
-        { status: 404 }
-      );
+      throw ApiErrors.NotFound('Membre');
     }
 
     // Prevent changing own role unless SUPER_ADMIN
     if (member.id === currentUser.id && data.role && currentUser.role !== 'SUPER_ADMIN') {
-      return NextResponse.json(
-        { error: 'Vous ne pouvez pas modifier votre propre rôle' },
-        { status: 403 }
-      );
+      throw ApiErrors.Forbidden('Vous ne pouvez pas modifier votre propre rôle');
     }
 
     // Prevent non-OWNER from changing OWNER role
     if (member.role === 'OWNER' && currentUser.role !== 'OWNER' && currentUser.role !== 'SUPER_ADMIN') {
-      return NextResponse.json(
-        { error: 'Seul le propriétaire peut modifier ce rôle' },
-        { status: 403 }
-      );
+      throw ApiErrors.Forbidden('Seul le propriétaire peut modifier ce rôle');
     }
 
-    // Update member
     const updatedMember = await prisma.user.update({
-      where: {
-        id: id,
-      },
+      where: { id },
       data: {
         ...(data.role && { role: data.role }),
         ...(data.name && { name: data.name }),
@@ -101,81 +84,63 @@ export async function PATCH(
 
     return NextResponse.json(updatedMember);
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json({ error: error.errors }, { status: 400 });
-    }
-
-    console.error('Error updating team member:', error);
-    return NextResponse.json(
-      { error: 'Erreur lors de la mise à jour du membre' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: `/api/team/${id}`,
+      method: 'PATCH',
+    });
   }
 }
 
-// DELETE /api/team/[id] - Remove team member
+/**
+ * DELETE /api/team/:id
+ * Remove team member
+ *
+ * ✅ REFACTORED: Using centralized error handler
+ */
 export async function DELETE(
-  req: Request,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
+
   try {
     const session = await auth();
-
     if (!session?.user) {
-      return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
+      throw ApiErrors.Unauthorized();
     }
 
-    const tenantId = await requireTenantId();
+    const user = session.user as any;
+    const tenantId = user.tenantId as string;
 
-    if (!tenantId) {
-      return NextResponse.json({ error: 'Tenant non trouvé' }, { status: 404 });
-    }
-
-    const { id } = await params;
-
-    // Check if current user has permission (OWNER only)
     const currentUser = await prisma.user.findFirst({
       where: {
         email: session.user.email!,
-        tenantId: tenantId,
+        tenantId,
       },
     });
 
     if (!currentUser || !['OWNER', 'SUPER_ADMIN'].includes(currentUser.role)) {
-      return NextResponse.json(
-        { error: 'Seul le propriétaire peut supprimer des membres' },
-        { status: 403 }
-      );
+      throw ApiErrors.Forbidden('Seul le propriétaire peut supprimer des membres');
     }
 
-    // Get member to delete
     const member = await prisma.user.findFirst({
       where: {
-        id: id,
-        tenantId: tenantId,
+        id,
+        tenantId,
       },
     });
 
     if (!member) {
-      return NextResponse.json(
-        { error: 'Membre non trouvé' },
-        { status: 404 }
-      );
+      throw ApiErrors.NotFound('Membre');
     }
 
     // Prevent deleting yourself
     if (member.id === currentUser.id) {
-      return NextResponse.json(
-        { error: 'Vous ne pouvez pas vous supprimer vous-même' },
-        { status: 403 }
-      );
+      throw ApiErrors.Forbidden('Vous ne pouvez pas vous supprimer vous-même');
     }
 
-    // Soft delete member
     await prisma.user.update({
-      where: {
-        id: id,
-      },
+      where: { id },
       data: {
         deletedAt: new Date(),
       },
@@ -183,10 +148,9 @@ export async function DELETE(
 
     return NextResponse.json({ message: 'Membre supprimé avec succès' });
   } catch (error) {
-    console.error('Error deleting team member:', error);
-    return NextResponse.json(
-      { error: 'Erreur lors de la suppression du membre' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: `/api/team/${id}`,
+      method: 'DELETE',
+    });
   }
 }

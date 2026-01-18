@@ -1,23 +1,33 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireTenantId } from '@/lib/tenant';
-import { auth } from '@/auth';
 import { prisma } from '@/lib/prisma';
-
+import { ApiErrors, handleApiError } from '@/lib/api/error-handler';
+import { auth } from '@/auth';
+import { hasPermission, type Role } from '@/lib/permissions';
 
 /**
  * GET /api/accounting/documents
  * List all documents (tax, payroll, legal) for the current tenant
- * Query params:
- * - type: Filter by document category (TAX, PAYROLL, LEGAL)
+ *
+ * ✅ REFACTORED: Using centralized error handler
  */
 export async function GET(req: NextRequest) {
   try {
-    const tenantId = await requireTenantId();
-    const { searchParams } = new URL(req.url);
+    const session = await auth();
+    if (!session?.user) {
+      throw ApiErrors.Unauthorized();
+    }
 
+    const user = session.user as any;
+    const role = user.role as Role;
+    const tenantId = user.tenantId as string;
+
+    if (!hasPermission(role, 'view_company_documents')) {
+      throw ApiErrors.Forbidden('Permission requise: view_company_documents');
+    }
+
+    const { searchParams } = new URL(req.url);
     const type = searchParams.get('type');
 
-    // Fetch all document types in parallel
     const [taxDocs, payrollDocs, legalDocs] = await Promise.all([
       type === null || type === 'TAX'
         ? prisma.taxDocument.findMany({
@@ -39,7 +49,6 @@ export async function GET(req: NextRequest) {
         : [],
     ]);
 
-    // Normalize documents with a common structure
     const documents = [
       ...taxDocs.map(doc => ({
         ...doc,
@@ -60,7 +69,6 @@ export async function GET(req: NextRequest) {
       new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     );
 
-    // Calculate stats
     const stats = {
       totalDocuments: documents.length,
       taxDocuments: taxDocs.length,
@@ -71,10 +79,9 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ documents, stats });
   } catch (error) {
-    console.error('Error fetching documents:', error);
-    return NextResponse.json(
-      { error: 'Une erreur est survenue lors de la récupération des documents' },
-      { status: 500 }
-    );
+    return handleApiError(error, {
+      route: '/api/accounting/documents',
+      method: 'GET',
+    });
   }
 }
