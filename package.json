@@ -13,7 +13,9 @@
     "db:migrate": "prisma migrate dev",
     "db:generate": "prisma generate",
     "db:studio": "prisma studio",
-    "purge": "ts-node scripts/purge-old-data.ts"
+    "purge": "ts-node scripts/purge-old-data.ts",
+    "test:create-users": "tsx scripts/create-test-users.ts",
+    "test:create-data": "tsx scripts/create-test-data.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
