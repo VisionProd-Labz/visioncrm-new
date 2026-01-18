@@ -15,6 +15,8 @@ export default function RegisterPage() {
   const { t } = useLanguage();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState(false);
+  const [userEmail, setUserEmail] = useState('');
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -54,14 +56,65 @@ export default function RegisterPage() {
         return;
       }
 
-      // Redirect to login
-      router.push('/login?registered=true');
+      // Show success message with email verification instructions
+      setUserEmail(formData.email);
+      setSuccess(true);
+      setIsLoading(false);
     } catch (error) {
       setError(t('register.error.generic'));
       setIsLoading(false);
     }
   };
 
+  // Success state - Email verification message
+  if (success) {
+    return (
+      <Card>
+        <CardHeader className="space-y-1">
+          <div className="flex justify-center mb-4">
+            <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center">
+              <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+          </div>
+          <CardTitle className="text-2xl font-bold text-center">Compte créé !</CardTitle>
+          <CardDescription className="text-center">
+            Vérifiez votre boîte mail
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <p className="text-sm text-gray-700 mb-2">
+              <strong>Un email de vérification a été envoyé à :</strong>
+            </p>
+            <p className="text-sm font-mono text-blue-700 mb-3">
+              {userEmail}
+            </p>
+            <p className="text-xs text-gray-600">
+              Cliquez sur le lien dans l'email pour activer votre compte.
+              Le lien expire dans 24 heures.
+            </p>
+          </div>
+
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+            <p className="text-xs text-gray-700">
+              <strong>Pas reçu d'email ?</strong> Vérifiez vos spams ou revenez sur cette page pour renvoyer l'email.
+            </p>
+          </div>
+
+          <Button
+            onClick={() => router.push('/login')}
+            className="w-full"
+          >
+            Retour à la connexion
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // Registration form
   return (
     <Card>
       <CardHeader className="space-y-1">

@@ -15,6 +15,7 @@ export type AuthEvent =
   | 'missing_credentials'
   | 'user_not_found'
   | 'invalid_password'
+  | 'email_not_verified'
   | 'tenant_deleted'
   | 'missing_tenant_id'
   | 'jwt_callback'
@@ -155,6 +156,7 @@ function getEventEmoji(event: AuthEvent): string {
     missing_credentials: '⚠️',
     user_not_found: '🔍',
     invalid_password: '🔒',
+    email_not_verified: '📧',
     tenant_deleted: '🗑️',
     missing_tenant_id: '⚠️',
     jwt_callback: '🎟️',
@@ -175,6 +177,7 @@ function getEventMessage(event: AuthEvent): string {
     missing_credentials: 'Missing credentials',
     user_not_found: 'User not found or no password',
     invalid_password: 'Invalid password',
+    email_not_verified: 'Email not verified',
     tenant_deleted: 'Tenant deleted',
     missing_tenant_id: 'No tenantId',
     jwt_callback: 'JWT callback',

@@ -63,6 +63,13 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             return null;
           }
 
+          // Check email verification (CRITICAL FOR PRODUCTION)
+          if (!user!.emailVerified) {
+            logAuthorizeFailed('email_not_verified');
+            console.log(`[AUTH] Login blocked - Email not verified for ${user!.email}`);
+            return null;
+          }
+
           // Create sanitized user object
           const userObject = createAuthUserObject(user!);
 
