@@ -1,37 +1,16 @@
-// This file configures instrumentation for the server and edge runtimes.
-// Sentry has been temporarily disabled - uncomment below and install @sentry/nextjs to re-enable
-
-// Export no-op request error handler for now
-export const onRequestError = (error: unknown) => {
-  console.error('Request error:', error);
-};
+/**
+ * Next.js Instrumentation
+ *
+ * This file is used to initialize Sentry and other monitoring tools
+ * Runs once when the server starts
+ */
 
 export async function register() {
   if (process.env.NEXT_RUNTIME === 'nodejs') {
-    // Server-side initialization
-    console.log('Server runtime initialized');
-
-    // Uncomment below when @sentry/nextjs is installed:
-    // const Sentry = await import('@sentry/nextjs');
-    // Sentry.init({
-    //   dsn: process.env.SENTRY_DSN,
-    //   tracesSampleRate: 1.0,
-    //   debug: false,
-    //   environment: process.env.NODE_ENV,
-    // });
+    await import('./sentry.server.config');
   }
 
   if (process.env.NEXT_RUNTIME === 'edge') {
-    // Edge runtime initialization
-    console.log('Edge runtime initialized');
-
-    // Uncomment below when @sentry/nextjs is installed:
-    // const Sentry = await import('@sentry/nextjs');
-    // Sentry.init({
-    //   dsn: process.env.SENTRY_DSN,
-    //   tracesSampleRate: 1.0,
-    //   debug: false,
-    //   environment: process.env.NODE_ENV,
-    // });
+    await import('./sentry.edge.config');
   }
 }

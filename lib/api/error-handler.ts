@@ -3,9 +3,11 @@
  *
  * Replaces 240+ duplicate error handlers across API routes
  * Provides structured logging and consistent error responses
+ * Integrates with Sentry for production error tracking
  */
 
 import { NextResponse } from 'next/server';
+import { captureException } from '@/lib/monitoring/sentry';
 
 /**
  * Custom API Error class with HTTP status codes
@@ -69,6 +71,7 @@ interface ErrorLogContext {
 
 function logError(error: unknown, context: ErrorLogContext = {}) {
   const isDev = process.env.NODE_ENV === 'development';
+  const isProd = process.env.NODE_ENV === 'production';
 
   const logData = {
     timestamp: new Date().toISOString(),
@@ -86,6 +89,28 @@ function logError(error: unknown, context: ErrorLogContext = {}) {
   } else {
     // Production: Structured JSON logging (for log aggregation services)
     console.error(JSON.stringify(logData));
+  }
+
+  // Send to Sentry in production (only for 500-level errors and unexpected errors)
+  if (isProd && error) {
+    // Skip 4xx client errors (they're not bugs)
+    const isClientError = error instanceof ApiError && error.statusCode < 500;
+
+    if (!isClientError) {
+      captureException(error, {
+        tags: {
+          ...(context.route && { route: context.route }),
+          ...(context.method && { method: context.method }),
+        },
+        extra: {
+          ...context,
+          timestamp: new Date().toISOString(),
+        },
+        user: context.userId ? {
+          id: context.userId,
+        } : undefined,
+      });
+    }
   }
 }
 
