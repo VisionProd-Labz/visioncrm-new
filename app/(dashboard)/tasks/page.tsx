@@ -62,8 +62,15 @@ export default function TasksPage() {
   const { t } = useLanguage();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [pagination, setPagination] = useState({
+    offset: 0,
+    limit: 20,
+    hasMore: false,
+    total: 0,
+  });
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [taskForm, setTaskForm] = useState({
@@ -88,21 +95,51 @@ export default function TasksPage() {
   };
 
   useEffect(() => {
-    fetchTasks();
-  }, []);
+    fetchTasks(true);
+  }, [statusFilter]);
 
-  const fetchTasks = async () => {
+  const fetchTasks = async (reset = false) => {
     try {
-      const response = await fetch('/api/tasks');
+      const currentOffset = reset ? 0 : pagination.offset;
+      const params = new URLSearchParams({
+        limit: pagination.limit.toString(),
+        offset: currentOffset.toString(),
+      });
+
+      if (statusFilter) {
+        params.append('status', statusFilter);
+      }
+
+      const url = `/api/tasks?${params.toString()}`;
+      const response = await fetch(url);
+
       if (response.ok) {
         const data = await response.json();
-        setTasks(data.tasks);
+
+        if (reset) {
+          setTasks(data.tasks);
+        } else {
+          setTasks(prev => [...prev, ...data.tasks]);
+        }
+
+        setPagination({
+          offset: currentOffset + data.tasks.length,
+          limit: pagination.limit,
+          hasMore: data.pagination?.hasMore || false,
+          total: data.pagination?.total || 0,
+        });
       }
     } catch (error) {
       console.error('Error fetching tasks:', error);
     } finally {
       setIsLoading(false);
+      setIsLoadingMore(false);
     }
+  };
+
+  const loadMoreTasks = async () => {
+    setIsLoadingMore(true);
+    await fetchTasks(false);
   };
 
   const resetTaskForm = () => {
@@ -342,6 +379,27 @@ export default function TasksPage() {
               </tbody>
             </table>
           </div>
+
+          {/* Load More Button */}
+          {pagination.hasMore && (
+            <div className="p-4 border-t border-border bg-muted/30">
+              <Button
+                variant="outline"
+                onClick={loadMoreTasks}
+                disabled={isLoadingMore}
+                className="w-full"
+              >
+                {isLoadingMore ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-t-primary border-r-primary border-b-border border-l-border rounded-full animate-spin mr-2" />
+                    Chargement...
+                  </>
+                ) : (
+                  `Charger plus (${pagination.total - tasks.length} restants)`
+                )}
+              </Button>
+            </div>
+          )}
         </div>
       ) : (
         <div className="bg-card border border-border rounded-lg p-12 text-center">

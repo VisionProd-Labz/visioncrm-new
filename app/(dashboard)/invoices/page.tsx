@@ -79,8 +79,15 @@ export default function InvoicesPage() {
   const router = useRouter();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [statusFilter, setStatusFilter] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [pagination, setPagination] = useState({
+    offset: 0,
+    limit: 20,
+    hasMore: false,
+    total: 0,
+  });
   const [pdfImportOpen, setPdfImportOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -104,7 +111,7 @@ export default function InvoicesPage() {
   };
 
   useEffect(() => {
-    fetchInvoices();
+    fetchInvoices(true);
   }, [statusFilter]);
 
   useEffect(() => {
@@ -113,19 +120,48 @@ export default function InvoicesPage() {
     }
   }, [showCreateModal]);
 
-  const fetchInvoices = async () => {
+  const fetchInvoices = async (reset = false) => {
     try {
-      const url = `/api/invoices${statusFilter ? `?status=${statusFilter}` : ''}`;
+      const currentOffset = reset ? 0 : pagination.offset;
+      const params = new URLSearchParams({
+        limit: pagination.limit.toString(),
+        offset: currentOffset.toString(),
+      });
+
+      if (statusFilter) {
+        params.append('status', statusFilter);
+      }
+
+      const url = `/api/invoices?${params.toString()}`;
       const response = await fetch(url);
+
       if (response.ok) {
         const data = await response.json();
-        setInvoices(data.invoices);
+
+        if (reset) {
+          setInvoices(data.invoices);
+        } else {
+          setInvoices(prev => [...prev, ...data.invoices]);
+        }
+
+        setPagination({
+          offset: currentOffset + data.invoices.length,
+          limit: pagination.limit,
+          hasMore: data.pagination?.hasMore || false,
+          total: data.pagination?.total || 0,
+        });
       }
     } catch (error) {
       console.error('Error fetching invoices:', error);
     } finally {
       setIsLoading(false);
+      setIsLoadingMore(false);
     }
+  };
+
+  const loadMoreInvoices = async () => {
+    setIsLoadingMore(true);
+    await fetchInvoices(false);
   };
 
   const handleDelete = async (id: string, invoiceNumber: string) => {
@@ -424,6 +460,27 @@ export default function InvoicesPage() {
               </tbody>
             </table>
           </div>
+
+          {/* Load More Button */}
+          {pagination.hasMore && (
+            <div className="p-4 border-t border-border bg-muted/30">
+              <Button
+                variant="outline"
+                onClick={loadMoreInvoices}
+                disabled={isLoadingMore}
+                className="w-full"
+              >
+                {isLoadingMore ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-t-primary border-r-primary border-b-border border-l-border rounded-full animate-spin mr-2" />
+                    Chargement...
+                  </>
+                ) : (
+                  `Charger plus (${pagination.total - invoices.length} restants)`
+                )}
+              </Button>
+            </div>
+          )}
         </div>
       ) : (
         <div className="bg-card border border-border rounded-lg p-12 text-center">

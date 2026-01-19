@@ -75,8 +75,15 @@ export default function QuotesPage() {
   const router = useRouter();
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [statusFilter, setStatusFilter] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [pagination, setPagination] = useState({
+    offset: 0,
+    limit: 20,
+    hasMore: false,
+    total: 0,
+  });
   const [pdfImportOpen, setPdfImportOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -100,7 +107,7 @@ export default function QuotesPage() {
   };
 
   useEffect(() => {
-    fetchQuotes();
+    fetchQuotes(true);
   }, [statusFilter]);
 
   useEffect(() => {
@@ -109,19 +116,48 @@ export default function QuotesPage() {
     }
   }, [showCreateModal]);
 
-  const fetchQuotes = async () => {
+  const fetchQuotes = async (reset = false) => {
     try {
-      const url = `/api/quotes${statusFilter ? `?status=${statusFilter}` : ''}`;
+      const currentOffset = reset ? 0 : pagination.offset;
+      const params = new URLSearchParams({
+        limit: pagination.limit.toString(),
+        offset: currentOffset.toString(),
+      });
+
+      if (statusFilter) {
+        params.append('status', statusFilter);
+      }
+
+      const url = `/api/quotes?${params.toString()}`;
       const response = await fetch(url);
+
       if (response.ok) {
         const data = await response.json();
-        setQuotes(data.quotes);
+
+        if (reset) {
+          setQuotes(data.quotes);
+        } else {
+          setQuotes(prev => [...prev, ...data.quotes]);
+        }
+
+        setPagination({
+          offset: currentOffset + data.quotes.length,
+          limit: pagination.limit,
+          hasMore: data.pagination?.hasMore || false,
+          total: data.pagination?.total || 0,
+        });
       }
     } catch (error) {
       console.error('Error fetching quotes:', error);
     } finally {
       setIsLoading(false);
+      setIsLoadingMore(false);
     }
+  };
+
+  const loadMoreQuotes = async () => {
+    setIsLoadingMore(true);
+    await fetchQuotes(false);
   };
 
   const handleDelete = async (id: string, quoteNumber: string) => {
@@ -420,6 +456,27 @@ export default function QuotesPage() {
               </tbody>
             </table>
           </div>
+
+          {/* Load More Button */}
+          {pagination.hasMore && (
+            <div className="p-4 border-t border-border bg-muted/30">
+              <Button
+                variant="outline"
+                onClick={loadMoreQuotes}
+                disabled={isLoadingMore}
+                className="w-full"
+              >
+                {isLoadingMore ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-t-primary border-r-primary border-b-border border-l-border rounded-full animate-spin mr-2" />
+                    Chargement...
+                  </>
+                ) : (
+                  `Charger plus (${pagination.total - quotes.length} restants)`
+                )}
+              </Button>
+            </div>
+          )}
         </div>
       ) : (
         <div className="bg-card border border-border rounded-lg p-12 text-center">
