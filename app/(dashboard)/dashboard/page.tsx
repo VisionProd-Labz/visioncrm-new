@@ -17,7 +17,7 @@ import {
   ArrowRight,
 } from 'lucide-react';
 import { MetricCard } from '@/components/dashboard/metric-card';
-import { NewQuoteModal } from '@/components/dashboard/new-quote-modal';
+import { NewQuoteModal } from '@/components/quotes/new-quote-modal';
 import { useLanguage } from '@/contexts/language-context';
 import { useModules } from '@/contexts/modules-context';
 import { useRouter } from 'next/navigation';
