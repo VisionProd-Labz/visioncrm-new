@@ -30,6 +30,8 @@ export async function GET(req: Request) {
     const status = searchParams.get('status');
     const assigneeId = searchParams.get('assignee_id');
     const contactId = searchParams.get('contact_id');
+    const limit = parseInt(searchParams.get('limit') || '50');
+    const offset = parseInt(searchParams.get('offset') || '0');
 
     const where: any = {
       tenant_id: tenantId,
@@ -48,32 +50,45 @@ export async function GET(req: Request) {
       where.contact_id = contactId;
     }
 
-    const tasks = await prisma.task.findMany({
-      where,
-      orderBy: [
-        { priority: 'desc' },
-        { due_date: 'asc' },
-      ],
-      include: {
-        assignee: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
+    const [tasks, total] = await Promise.all([
+      prisma.task.findMany({
+        where,
+        orderBy: [
+          { priority: 'desc' },
+          { due_date: 'asc' },
+        ],
+        take: limit,
+        skip: offset,
+        include: {
+          assignee: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+            },
+          },
+          contact: {
+            select: {
+              id: true,
+              first_name: true,
+              last_name: true,
+              company: true,
+            },
           },
         },
-        contact: {
-          select: {
-            id: true,
-            first_name: true,
-            last_name: true,
-            company: true,
-          },
-        },
+      }),
+      prisma.task.count({ where }),
+    ]);
+
+    return NextResponse.json({
+      tasks,
+      pagination: {
+        total,
+        limit,
+        offset,
+        hasMore: offset + limit < total,
       },
     });
-
-    return NextResponse.json({ tasks });
   } catch (error) {
     return handleApiError(error, {
       route: '/api/tasks',

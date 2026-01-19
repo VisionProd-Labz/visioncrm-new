@@ -32,6 +32,8 @@ export async function GET(req: Request) {
     const { searchParams } = new URL(req.url);
     const contactId = searchParams.get('contact_id');
     const status = searchParams.get('status');
+    const limit = parseInt(searchParams.get('limit') || '50');
+    const offset = parseInt(searchParams.get('offset') || '0');
 
     const where: any = {
       tenant_id: tenantId,
@@ -46,23 +48,36 @@ export async function GET(req: Request) {
       where.status = status;
     }
 
-    const quotes = await prisma.quote.findMany({
-      where,
-      orderBy: { created_at: 'desc' },
-      include: {
-        contact: {
-          select: {
-            id: true,
-            first_name: true,
-            last_name: true,
-            email: true,
-            company: true,
+    const [quotes, total] = await Promise.all([
+      prisma.quote.findMany({
+        where,
+        orderBy: { created_at: 'desc' },
+        take: limit,
+        skip: offset,
+        include: {
+          contact: {
+            select: {
+              id: true,
+              first_name: true,
+              last_name: true,
+              email: true,
+              company: true,
+            },
           },
         },
+      }),
+      prisma.quote.count({ where }),
+    ]);
+
+    return NextResponse.json({
+      quotes,
+      pagination: {
+        total,
+        limit,
+        offset,
+        hasMore: offset + limit < total,
       },
     });
-
-    return NextResponse.json({ quotes });
   } catch (error) {
     return handleApiError(error, {
       route: '/api/quotes',

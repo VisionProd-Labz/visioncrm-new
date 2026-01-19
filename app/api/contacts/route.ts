@@ -62,10 +62,23 @@ export async function GET(req: Request) {
         skip,
         take: limit,
         orderBy: { created_at: 'desc' },
-        include: {
-          vehicles: true,
+        select: {
+          id: true,
+          first_name: true,
+          last_name: true,
+          email: true,
+          phone: true,
+          company: true,
+          address: true,
+          tags: true,
+          is_vip: true,
+          is_supplier: true,
+          custom_fields: true,
+          created_at: true,
+          updated_at: true,
           _count: {
             select: {
+              vehicles: true,
               quotes: true,
               invoices: true,
               tasks: true,
