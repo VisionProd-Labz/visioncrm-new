@@ -18,6 +18,7 @@ import {
   logJwtCallback,
   logSessionCallback,
 } from './lib/auth/logger';
+import { createAuditLog } from './lib/audit/audit-logger';
 
 console.log('🔧 [AUTH.TS V5] Loading auth configuration...');
 
@@ -60,6 +61,14 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           const isPasswordValid = await bcrypt.compare(password, user!.password!);
           if (!isPasswordValid) {
             logAuthorizeFailed('invalid_password');
+            // Audit log for failed login attempt
+            await createAuditLog({
+              action: 'login_failed',
+              entityType: 'user',
+              entityId: user!.id,
+              tenantId: user!.tenant?.id,
+              metadata: { reason: 'invalid_password', email },
+            }).catch(() => {}); // Don't block login on audit failure
             return null;
           }
 
@@ -78,6 +87,15 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             tenantId: userObject.tenantId,
             role: userObject.role,
           });
+
+          // Audit log for successful login
+          await createAuditLog({
+            action: 'login',
+            entityType: 'user',
+            entityId: userObject.id,
+            tenantId: userObject.tenantId,
+            metadata: { email, role: userObject.role },
+          }).catch(() => {}); // Don't block login on audit failure
 
           return userObject as User;
         } catch (error) {
