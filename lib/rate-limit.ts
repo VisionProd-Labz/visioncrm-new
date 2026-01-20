@@ -36,6 +36,11 @@ function getRedisClient(): Redis | null {
 
 /**
  * Rate limit configuration
+ *
+ * ⚠️ TEMPORARY: Increased limits for deployment testing
+ * TODO: Restore to production values after testing:
+ *   - login: 5 attempts / minute
+ *   - register: 3 attempts / hour
  */
 const RATE_LIMITS = {
   ai_chat: {
@@ -43,11 +48,11 @@ const RATE_LIMITS = {
     windowMs: 60 * 60 * 1000, // 1 hour
   },
   login: {
-    maxRequests: 5, // 5 attempts per minute per IP
+    maxRequests: 100, // ⚠️ TEMP: 100 for testing (prod: 5 attempts per minute)
     windowMs: 60 * 1000, // 1 minute
   },
   register: {
-    maxRequests: 3, // 3 attempts per hour per IP
+    maxRequests: 50, // ⚠️ TEMP: 50 for testing (prod: 3 attempts per hour)
     windowMs: 60 * 60 * 1000, // 1 hour
   },
   password_reset: {
