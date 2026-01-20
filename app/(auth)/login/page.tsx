@@ -1,18 +1,20 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { signIn } from 'next-auth/react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useLanguage } from '@/contexts/language-context';
 import { SocialLogin } from '@/components/auth/social-login';
 
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { t } = useLanguage();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
@@ -20,6 +22,17 @@ export default function LoginPage() {
     email: '',
     password: '',
   });
+
+  // Check for tenant/subdomain errors in URL
+  useEffect(() => {
+    const errorParam = searchParams.get('error');
+
+    if (errorParam === 'invalid_subdomain') {
+      setError('Ce sous-domaine n\'existe pas. Veuillez vérifier l\'URL ou contactez votre administrateur.');
+    } else if (errorParam === 'wrong_tenant') {
+      setError('Vous n\'avez pas accès à ce tenant. Veuillez vous connecter avec le bon compte.');
+    }
+  }, [searchParams]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

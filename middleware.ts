@@ -1,12 +1,14 @@
 import { auth } from '@/auth';
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { getSubdomainFromHost, getTenantBySubdomain } from '@/lib/tenant';
 
 /**
- * ✅ SECURITY FIX #5: CSRF Protection Middleware
+ * ✅ SECURITY FIX #5: CSRF Protection + Multi-Tenant Middleware
  *
- * Protects against Cross-Site Request Forgery attacks
- * ⚠️ RATE LIMITING DISABLED for deployment testing
+ * - Protects against Cross-Site Request Forgery attacks
+ * - Enforces tenant isolation via subdomains
+ * - ⚠️ RATE LIMITING DISABLED for deployment testing
  */
 export async function middleware(request: NextRequest) {
   // Skip middleware during build time
@@ -16,6 +18,25 @@ export async function middleware(request: NextRequest) {
 
   const { pathname, origin } = request.nextUrl;
   const method = request.method;
+  const host = request.headers.get('host') || '';
+
+  // ✅ MULTI-TENANT: Extract subdomain and validate tenant
+  const subdomain = getSubdomainFromHost(host);
+  let tenantId: string | null = null;
+
+  if (subdomain) {
+    // Check if tenant exists
+    const tenant = await getTenantBySubdomain(subdomain);
+
+    if (!tenant) {
+      // Invalid subdomain - redirect to main domain
+      console.warn(`[SECURITY] Invalid subdomain attempted: ${subdomain}`);
+      const mainDomain = process.env.NEXTAUTH_URL || 'https://vision-crm.app';
+      return NextResponse.redirect(new URL('/login?error=invalid_subdomain', mainDomain));
+    }
+
+    tenantId = tenant.id;
+  }
 
   // ✅ CSRF PROTECTION: Check for mutating HTTP methods
   const dangerousMethods = ['POST', 'PUT', 'PATCH', 'DELETE'];
@@ -74,7 +95,7 @@ export async function middleware(request: NextRequest) {
   const session = await auth();
 
   // Public routes (allow without auth)
-  const publicRoutes = ['/login', '/register', '/forgot-password', '/reset-password', '/api/auth', '/api/register'];
+  const publicRoutes = ['/login', '/register', '/forgot-password', '/reset-password', '/api/auth', '/api/register', '/verify-email'];
   const isPublicRoute = publicRoutes.some(route => pathname.startsWith(route));
 
   if (!isPublicRoute && !session?.user) {
@@ -84,8 +105,32 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
+  // ✅ TENANT ISOLATION: Verify user belongs to the tenant subdomain
+  if (subdomain && tenantId && session?.user) {
+    const userTenantId = (session.user as any).tenantId;
+
+    if (userTenantId !== tenantId) {
+      // User trying to access wrong tenant
+      console.warn('[SECURITY] Tenant mismatch:', {
+        subdomain,
+        expectedTenantId: tenantId,
+        userTenantId,
+        userId: session.user.id,
+      });
+
+      // Redirect to correct tenant or logout
+      return NextResponse.redirect(new URL('/login?error=wrong_tenant', origin));
+    }
+  }
+
   // ✅ SECURITY HEADERS: Add security headers to response
   const response = NextResponse.next();
+
+  // Inject tenant headers for API routes
+  if (tenantId && subdomain) {
+    response.headers.set('x-tenant-id', tenantId);
+    response.headers.set('x-tenant-subdomain', subdomain);
+  }
 
   // Prevent clickjacking
   response.headers.set('X-Frame-Options', 'DENY');
