@@ -1,10 +1,8 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { hashPassword } from '@/auth';
 import { ApiErrors, handleApiError } from '@/lib/api/error-handler';
 import { sendVerificationEmail } from '@/lib/email/email-service';
-import { checkRateLimit } from '@/lib/rate-limit';
-import { getClientIp } from '@/lib/utils/request';
 import { z } from 'zod';
 import crypto from 'crypto';
 
@@ -25,32 +23,11 @@ const registerSchema = z.object({
  *
  * PUBLIC ENDPOINT - No auth required
  * ✅ REFACTORED: Using centralized error handler
+ * ✅ Rate limiting handled by middleware
  */
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
   try {
-    // Rate limiting check
-    const clientIp = getClientIp(req);
-    const rateLimitResult = await checkRateLimit(clientIp, 'register');
-
-    if (!rateLimitResult.allowed) {
-      const waitMinutes = Math.ceil(
-        (rateLimitResult.resetAt.getTime() - Date.now()) / 60000
-      );
-
-      return NextResponse.json(
-        {
-          error: `Trop de tentatives d'inscription. Réessayez dans ${waitMinutes} minute(s).`,
-        },
-        {
-          status: 429,
-          headers: {
-            'X-RateLimit-Limit': '3',
-            'X-RateLimit-Remaining': '0',
-            'X-RateLimit-Reset': rateLimitResult.resetAt.toISOString(),
-          },
-        }
-      );
-    }
+    // Rate limiting is now handled by middleware (no duplicate logic needed)
 
     const body = await req.json();
 
