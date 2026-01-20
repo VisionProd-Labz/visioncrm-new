@@ -10,7 +10,10 @@ export const { GET } = handlers;
 // Wrap POST handler with rate limiting
 const originalPOST = handlers.POST;
 
-export async function POST(req: NextRequest) {
+export async function POST(
+  req: NextRequest,
+  context: { params: Promise<Record<string, string | string[]>> }
+) {
   // Get client IP for rate limiting
   const ip =
     req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
@@ -51,6 +54,6 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Call original POST handler
+  // Call original POST handler (NextAuth handles params internally)
   return originalPOST(req);
 }

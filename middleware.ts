@@ -32,8 +32,7 @@ export async function middleware(request: NextRequest) {
       // Skip CSRF for public endpoints (webhooks, public APIs)
       const publicEndpoints = [
         '/api/webhooks/',
-        '/api/auth/signin',
-        '/api/auth/callback',
+        '/api/auth/',  // ✅ FIX: Exempt ALL NextAuth routes from CSRF (NextAuth handles its own CSRF)
         '/api/invitations/accept/',
         '/api/rgpd/dsar/request',
       ];
