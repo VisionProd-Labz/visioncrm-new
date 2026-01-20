@@ -26,6 +26,7 @@ export default function RegisterPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [userEmail, setUserEmail] = useState('');
+  const [resendingEmail, setResendingEmail] = useState(false);
 
   const {
     register,
@@ -100,6 +101,32 @@ export default function RegisterPage() {
     }
   };
 
+  const handleResendEmail = async () => {
+    setResendingEmail(true);
+
+    try {
+      const response = await fetch('/api/auth/resend-verification', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: userEmail }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        toast.error(result.error || 'Erreur lors du renvoi de l\'email');
+        return;
+      }
+
+      toast.success('Email de vérification renvoyé avec succès !');
+    } catch (error) {
+      console.error('[RESEND_EMAIL] Error:', error);
+      toast.error('Erreur réseau. Veuillez réessayer.');
+    } finally {
+      setResendingEmail(false);
+    }
+  };
+
   // Success state - Email verification message
   if (success) {
     return (
@@ -133,9 +160,25 @@ export default function RegisterPage() {
             </div>
 
             <div className="bg-yellow-50 dark:bg-yellow-950/30 border border-yellow-200 dark:border-yellow-800 rounded-lg p-3">
-              <p className="text-xs text-gray-700 dark:text-gray-300">
-                <strong>Pas reçu d'email ?</strong> Vérifiez vos spams ou contactez le support.
+              <p className="text-xs text-gray-700 dark:text-gray-300 mb-2">
+                <strong>Pas reçu d'email ?</strong> Vérifiez vos spams ou cliquez ci-dessous pour renvoyer l'email.
               </p>
+              <Button
+                onClick={handleResendEmail}
+                disabled={resendingEmail}
+                variant="outline"
+                size="sm"
+                className="w-full"
+              >
+                {resendingEmail ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Envoi en cours...
+                  </>
+                ) : (
+                  'Renvoyer l\'email de vérification'
+                )}
+              </Button>
             </div>
 
             <Button
