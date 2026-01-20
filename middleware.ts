@@ -1,14 +1,15 @@
 import { auth } from '@/auth';
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { checkRateLimit, getClientIp } from '@/lib/rate-limit';
 
 /**
- * ✅ SECURITY FIX #5: CSRF Protection Middleware
+ * ✅ SECURITY FIX #5: CSRF Protection + Rate Limiting Middleware
  *
- * Protects against Cross-Site Request Forgery attacks by:
- * 1. Verifying Origin/Referer headers for mutating requests
- * 2. Ensuring requests come from the same domain
- * 3. Blocking requests from external domains
+ * Protects against:
+ * 1. Cross-Site Request Forgery attacks
+ * 2. Brute force attacks on authentication endpoints
+ * 3. Request flooding
  */
 export async function middleware(request: NextRequest) {
   // Skip middleware during build time
@@ -18,6 +19,58 @@ export async function middleware(request: NextRequest) {
 
   const { pathname, origin } = request.nextUrl;
   const method = request.method;
+
+  // ✅ RATE LIMITING: Apply to authentication endpoints
+  if (method === 'POST') {
+    const ip = getClientIp(request);
+    let rateLimitResult;
+    let rateLimitType: 'login' | 'register' | 'password_reset' | null = null;
+
+    // Login rate limiting
+    if (pathname.includes('/api/auth/callback/credentials')) {
+      rateLimitType = 'login';
+      rateLimitResult = await checkRateLimit(ip, 'login');
+    }
+    // Register rate limiting
+    else if (pathname === '/api/register' || pathname === '/api/auth/register') {
+      rateLimitType = 'register';
+      rateLimitResult = await checkRateLimit(ip, 'register');
+    }
+    // Password reset rate limiting
+    else if (pathname.includes('/api/auth/reset-password') || pathname.includes('/api/auth/forgot-password')) {
+      rateLimitType = 'password_reset';
+      rateLimitResult = await checkRateLimit(ip, 'password_reset');
+    }
+
+    // Block if rate limit exceeded
+    if (rateLimitResult && !rateLimitResult.allowed) {
+      console.warn(`[SECURITY] Rate limit exceeded for ${rateLimitType}`, {
+        ip,
+        path: pathname,
+        remaining: rateLimitResult.remaining,
+        resetAt: rateLimitResult.resetAt.toISOString(),
+      });
+
+      return NextResponse.json(
+        {
+          error: 'Too many requests',
+          message: `Too many ${rateLimitType?.replace('_', ' ')} attempts. Please try again later.`,
+          resetAt: rateLimitResult.resetAt.toISOString(),
+        },
+        {
+          status: 429,
+          headers: {
+            'Retry-After': Math.ceil(
+              (rateLimitResult.resetAt.getTime() - Date.now()) / 1000
+            ).toString(),
+            'X-RateLimit-Limit': rateLimitType === 'login' ? '5' : '3',
+            'X-RateLimit-Remaining': rateLimitResult.remaining.toString(),
+            'X-RateLimit-Reset': rateLimitResult.resetAt.toISOString(),
+          },
+        }
+      );
+    }
+  }
 
   // ✅ CSRF PROTECTION: Check for mutating HTTP methods
   const dangerousMethods = ['POST', 'PUT', 'PATCH', 'DELETE'];
