@@ -7,7 +7,7 @@ export async function sendVerificationEmail(email: string, token: string) {
 
   try {
     await resend.emails.send({
-      from: 'VisionCRM <noreply@visioncrm.app>',
+      from: 'VisionCRM <noreply@vision-crm.app>',
       to: email,
       subject: 'Vérifiez votre adresse email - VisionCRM',
       html: `
@@ -139,7 +139,7 @@ export async function sendPasswordResetEmail(email: string, token: string) {
 
   try {
     await resend.emails.send({
-      from: 'VisionCRM <noreply@visioncrm.app>',
+      from: 'VisionCRM <noreply@vision-crm.app>',
       to: email,
       subject: 'Réinitialisez votre mot de passe - VisionCRM',
       html: `
