@@ -74,7 +74,7 @@ export async function middleware(request: NextRequest) {
   const session = await auth();
 
   // Public routes (allow without auth)
-  const publicRoutes = ['/login', '/register', '/forgot-password', '/reset-password', '/api/auth'];
+  const publicRoutes = ['/login', '/register', '/forgot-password', '/reset-password', '/api/auth', '/api/register'];
   const isPublicRoute = publicRoutes.some(route => pathname.startsWith(route));
 
   if (!isPublicRoute && !session?.user) {
