@@ -17,24 +17,12 @@ const registerSchema = z.object({
     .regex(/^[a-z0-9-]+$/, 'Le sous-domaine ne peut contenir que des lettres minuscules, chiffres et tirets'),
 });
 
-/**
- * POST /api/register
- * Create new tenant and user account
- *
- * PUBLIC ENDPOINT - No auth required
- * ✅ REFACTORED: Using centralized error handler
- * ✅ Rate limiting handled by middleware
- */
 export async function POST(req: NextRequest) {
   try {
-    // Rate limiting is now handled by middleware (no duplicate logic needed)
-
     const body = await req.json();
 
-    // Validate input
     const { name, email, password, tenantName, subdomain } = registerSchema.parse(body);
 
-    // Check if email already exists
     const existingUser = await prisma.user.findUnique({
       where: { email },
     });
@@ -43,7 +31,6 @@ export async function POST(req: NextRequest) {
       throw ApiErrors.BadRequest('Cet email est déjà utilisé');
     }
 
-    // Check if subdomain already exists
     const existingTenant = await prisma.tenant.findUnique({
       where: { subdomain },
     });
@@ -52,12 +39,9 @@ export async function POST(req: NextRequest) {
       throw ApiErrors.BadRequest('Ce sous-domaine est déjà utilisé');
     }
 
-    // Hash password
     const hashedPassword = await hashPassword(password);
 
-    // Create tenant and user in a transaction
     const result = await prisma.$transaction(async (tx) => {
-      // Create tenant
       const tenant = await tx.tenant.create({
         data: {
           name: tenantName,
@@ -66,7 +50,6 @@ export async function POST(req: NextRequest) {
         },
       });
 
-      // Create user with OWNER role (email not verified yet)
       const user = await tx.user.create({
         data: {
           name,
@@ -74,14 +57,13 @@ export async function POST(req: NextRequest) {
           password: hashedPassword,
           tenantId: tenant.id,
           role: 'OWNER',
-          emailVerified: null, // Not verified yet
+          emailVerified: null,
         },
       });
 
-      // Create email verification token
       const verificationToken = crypto.randomBytes(32).toString('hex');
       const expiresAt = new Date();
-      expiresAt.setHours(expiresAt.getHours() + 24); // 24 hour expiry
+      expiresAt.setHours(expiresAt.getHours() + 24);
 
       await tx.emailVerificationToken.create({
         data: {
@@ -95,14 +77,11 @@ export async function POST(req: NextRequest) {
       return { tenant, user, verificationToken };
     });
 
-    // Send verification email (non-blocking)
     try {
       await sendVerificationEmail(result.user.email, result.verificationToken);
       console.log(`[REGISTER] Verification email sent to ${result.user.email}`);
     } catch (emailError) {
-      // Log error but don't fail registration
       console.error('[REGISTER] Failed to send verification email:', emailError);
-      // Account is still created, user can request a new verification email
     }
 
     return NextResponse.json({
