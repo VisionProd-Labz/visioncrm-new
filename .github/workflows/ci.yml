@@ -97,7 +97,7 @@ jobs:
           DATABASE_URL: postgresql://postgres:test_password@localhost:5432/visioncrm_test
           DIRECT_URL: postgresql://postgres:test_password@localhost:5432/visioncrm_test
           NEXTAUTH_SECRET: test_secret_key_minimum_32_characters_long_for_nextauth
-          NEXTAUTH_URL: http://localhost:3000
+          NEXTAUTH_URL: https://vision-crm.app
           PLAYWRIGHT_TEST_BASE_URL: http://localhost:3000
         run: pnpm exec playwright test
 
