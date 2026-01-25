@@ -3,7 +3,7 @@
  * Dropdown menu displaying user notifications
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Bell } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -17,46 +17,30 @@ import {
 import { useLanguage } from '@/contexts/language-context';
 import { Notification } from './types';
 
-// Mock notifications (in production, fetch from API)
-const MOCK_NOTIFICATIONS: Notification[] = [
-  {
-    id: '1',
-    name: 'Sophie Dubois',
-    action: 'a répondu à votre demande',
-    target: 'Devis #1245',
-    time: '3 janv. 2026 · 12:05',
-    avatar: 'SD',
-  },
-  {
-    id: '2',
-    name: 'Marc Lefebvre',
-    action: 'vous suit maintenant',
-    target: '',
-    time: '2 janv. 2026 · 21:05',
-    avatar: 'ML',
-  },
-  {
-    id: '3',
-    name: 'Julie Martin',
-    action: 'vous a assigné une tâche',
-    target: '#VP-2157',
-    time: '2 janv. 2026 · 14:05',
-    avatar: 'JM',
-  },
-  {
-    id: '4',
-    name: 'Système',
-    action: 'a envoyé une notification',
-    target: 'Rapport hebdomadaire',
-    time: '1 janv. 2026 · 14:05',
-    avatar: 'S',
-  },
-];
-
 export function NotificationsMenu() {
   const { t } = useLanguage();
-  const [notifications] = useState<Notification[]>(MOCK_NOTIFICATIONS);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const notificationCount = notifications.length;
+
+  useEffect(() => {
+    // Fetch real notifications from API
+    const fetchNotifications = async () => {
+      try {
+        const response = await fetch('/api/notifications');
+        if (response.ok) {
+          const data = await response.json();
+          setNotifications(data.notifications || []);
+        }
+      } catch (error) {
+        console.error('Error fetching notifications:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchNotifications();
+  }, []);
 
   return (
     <DropdownMenu>
@@ -90,23 +74,33 @@ export function NotificationsMenu() {
 
         {/* Notifications List */}
         <div className="max-h-80 overflow-y-auto">
-          {notifications.map((notif) => (
-            <DropdownMenuItem
-              key={notif.id}
-              className="flex items-start gap-3 py-3 cursor-pointer"
-            >
-              <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center text-xs font-semibold shrink-0">
-                {notif.avatar}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm">
-                  <span className="font-medium">{notif.name}</span> {notif.action}{' '}
-                  {notif.target && <span className="font-medium">{notif.target}</span>}
-                </p>
-                <p className="text-xs text-muted-foreground mt-0.5">{notif.time}</p>
-              </div>
-            </DropdownMenuItem>
-          ))}
+          {isLoading ? (
+            <div className="py-8 text-center text-sm text-muted-foreground">
+              {t('dashboard.loading')}
+            </div>
+          ) : notifications.length === 0 ? (
+            <div className="py-8 text-center text-sm text-muted-foreground">
+              {t('notifications.empty')}
+            </div>
+          ) : (
+            notifications.map((notif) => (
+              <DropdownMenuItem
+                key={notif.id}
+                className="flex items-start gap-3 py-3 cursor-pointer"
+              >
+                <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center text-xs font-semibold shrink-0">
+                  {notif.avatar}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm">
+                    <span className="font-medium">{notif.name}</span> {notif.action}{' '}
+                    {notif.target && <span className="font-medium">{notif.target}</span>}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{notif.time}</p>
+                </div>
+              </DropdownMenuItem>
+            ))
+          )}
         </div>
 
         <DropdownMenuSeparator />

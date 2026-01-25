@@ -85,13 +85,6 @@ export function UserProfileMenu() {
           <Building2 className="h-4 w-4" />
           <span>{t('user.menu.my_company')}</span>
         </DropdownMenuItem>
-        <DropdownMenuItem
-          className="gap-2"
-          onClick={() => window.open('https://docs.visioncrm.app', '_blank')}
-        >
-          <FileText className="h-4 w-4" />
-          <span>{t('user.menu.documentation')}</span>
-        </DropdownMenuItem>
         <DropdownMenuItem className="gap-2" onClick={() => router.push('/settings')}>
           <Settings className="h-4 w-4" />
           <span>{t('user.menu.settings')}</span>

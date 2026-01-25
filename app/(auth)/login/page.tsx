@@ -1,5 +1,6 @@
 'use client';
 
+import { Suspense } from 'react';
 import { useState, useEffect } from 'react';
 import { signIn } from 'next-auth/react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -8,11 +9,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useLanguage } from '@/contexts/language-context';
 import { SocialLogin } from '@/components/auth/social-login';
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { t } = useLanguage();
@@ -138,5 +138,20 @@ export default function LoginPage() {
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={
+      <Card>
+        <CardHeader className="space-y-1">
+          <CardTitle className="text-2xl font-bold">Connexion</CardTitle>
+          <CardDescription>Chargement...</CardDescription>
+        </CardHeader>
+      </Card>
+    }>
+      <LoginForm />
+    </Suspense>
   );
 }
