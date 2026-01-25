@@ -1,14 +1,31 @@
 import { auth } from '@/auth';
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { getSubdomainFromHost, getTenantBySubdomain } from '@/lib/tenant';
+
+/**
+ * Extract subdomain from host (Edge-compatible, no Prisma)
+ */
+function getSubdomainFromHost(host: string): string | null {
+  const hostname = host.split(':')[0];
+
+  if (hostname === 'localhost' || /^\d+\.\d+\.\d+\.\d+$/.test(hostname)) {
+    return null;
+  }
+
+  const parts = hostname.split('.');
+  if (parts.length < 3) {
+    return null;
+  }
+
+  return parts[0];
+}
 
 /**
  * ✅ SECURITY FIX #5: CSRF Protection + Multi-Tenant Middleware
  *
  * - Protects against Cross-Site Request Forgery attacks
  * - Enforces tenant isolation via subdomains
- * - ⚠️ RATE LIMITING DISABLED for deployment testing
+ * - NOTE: Tenant validation is done server-side in API routes (Edge Runtime compatible)
  */
 export async function middleware(request: NextRequest) {
   // Skip middleware during build time
@@ -20,23 +37,8 @@ export async function middleware(request: NextRequest) {
   const method = request.method;
   const host = request.headers.get('host') || '';
 
-  // ✅ MULTI-TENANT: Extract subdomain and validate tenant
+  // ✅ MULTI-TENANT: Extract subdomain (validation done server-side)
   const subdomain = getSubdomainFromHost(host);
-  let tenantId: string | null = null;
-
-  if (subdomain) {
-    // Check if tenant exists
-    const tenant = await getTenantBySubdomain(subdomain);
-
-    if (!tenant) {
-      // Invalid subdomain - redirect to main domain
-      console.warn(`[SECURITY] Invalid subdomain attempted: ${subdomain}`);
-      const mainDomain = process.env.NEXTAUTH_URL || 'https://vision-crm.app';
-      return NextResponse.redirect(new URL('/login?error=invalid_subdomain', mainDomain));
-    }
-
-    tenantId = tenant.id;
-  }
 
   // ✅ CSRF PROTECTION: Check for mutating HTTP methods
   const dangerousMethods = ['POST', 'PUT', 'PATCH', 'DELETE'];
@@ -105,30 +107,11 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  // ✅ TENANT ISOLATION: Verify user belongs to the tenant subdomain
-  if (subdomain && tenantId && session?.user) {
-    const userTenantId = (session.user as any).tenantId;
-
-    if (userTenantId !== tenantId) {
-      // User trying to access wrong tenant
-      console.warn('[SECURITY] Tenant mismatch:', {
-        subdomain,
-        expectedTenantId: tenantId,
-        userTenantId,
-        userId: session.user.id,
-      });
-
-      // Redirect to correct tenant or logout
-      return NextResponse.redirect(new URL('/login?error=wrong_tenant', origin));
-    }
-  }
-
   // ✅ SECURITY HEADERS: Add security headers to response
   const response = NextResponse.next();
 
-  // Inject tenant headers for API routes
-  if (tenantId && subdomain) {
-    response.headers.set('x-tenant-id', tenantId);
+  // Inject subdomain header for API routes (tenant validation done server-side)
+  if (subdomain) {
     response.headers.set('x-tenant-subdomain', subdomain);
   }
 
